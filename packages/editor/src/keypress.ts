@@ -2,11 +2,12 @@ export interface KeyEvent {
   name: string;
   ctrl: boolean;
   shift: boolean;
+  alt: boolean;
   raw: Buffer;
 }
 
 export function parseKey(data: Buffer): KeyEvent {
-  const key: KeyEvent = { name: '', ctrl: false, shift: false, raw: data };
+  const key: KeyEvent = { name: '', ctrl: false, shift: false, alt: false, raw: data };
 
   // enter (13) and tab (9) must be checked before ctrl
   if (data.length === 1 && data[0] === 13) {
@@ -22,6 +23,25 @@ export function parseKey(data: Buffer): KeyEvent {
   if (data.length === 1 && data[0] < 27) {
     key.ctrl = true;
     key.name = String.fromCharCode(data[0] + 96);
+    return key;
+  }
+
+  // alt+letter (ESC followed by a single printable char)
+  if (data.length === 2 && data[0] === 0x1b && data[1] >= 0x20) {
+    key.alt = true;
+    key.name = String.fromCharCode(data[1]);
+    return key;
+  }
+
+  // function keys (ESC O ...)
+  if (data[0] === 0x1b && data[1] === 0x4f) {
+    switch (data[2]) {
+      case 0x50: key.name = 'f1'; break;
+      case 0x51: key.name = 'f2'; break;
+      case 0x52: key.name = 'f3'; break;
+      case 0x53: key.name = 'f4'; break;
+      default: key.name = 'unknown'; break;
+    }
     return key;
   }
 

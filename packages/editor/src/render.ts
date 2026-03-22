@@ -7,10 +7,10 @@ import { getRange, isSelected } from './selection.js';
 const shortcuts = [
   ['^Q', 'Exit'],
   ['^O', 'Save'],
+  ['^Z', 'Undo'],
+  ['^Y', 'Redo'],
   ['^X', 'Cut'],
   ['^V', 'Paste'],
-  ['^W', 'Search'],
-  ['^G', 'Help'],
 ];
 
 export function gutterWidth(lineCount: number): number {

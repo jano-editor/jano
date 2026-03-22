@@ -19,7 +19,7 @@ export interface DialogOptions {
 }
 
 export type DialogResult =
-  | { type: 'button'; value: string }
+  | { type: 'button'; value: string; inputValue?: string }
   | { type: 'input'; value: string }
   | { type: 'cancel' };
 
@@ -156,16 +156,17 @@ export function showDialog(
 
       // enter
       if (data[0] === 13) {
-        cleanup();
-        if (hasInput && !buttonsActive && buttons.length === 0) {
-          resolve({ type: 'input', value: inputText });
-        } else if (buttons.length > 0 && buttonsActive) {
-          resolve({ type: 'button', value: buttons[selectedButton].value });
-        } else if (hasInput) {
-          // enter on input with buttons: move to buttons
+        if (hasInput && !buttonsActive && buttons.length > 0) {
+          // move focus from input to buttons
           buttonsActive = true;
           renderDialog();
           return;
+        }
+        cleanup();
+        if (hasInput && !buttonsActive && buttons.length === 0) {
+          resolve({ type: 'input', value: inputText });
+        } else if (buttons.length > 0) {
+          resolve({ type: 'button', value: buttons[selectedButton].value, inputValue: inputText });
         }
         return;
       }
