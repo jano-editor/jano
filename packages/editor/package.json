@@ -1,0 +1,12 @@
+{
+  "name": "@jano/editor",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "jano": "src/index.ts"
+  },
+  "dependencies": {
+    "@jano/ui": "workspace:*"
+  }
+}
