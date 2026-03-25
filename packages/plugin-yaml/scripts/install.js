@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 
 function getPluginsDir() {
-  const home = homedir();
+  if (process.env.JANO_HOME) {
+    return join(process.env.JANO_HOME, 'plugins');
+  }
+  const home = process.env.JANO_HOME
+    || process.env.SNAP_REAL_HOME
+    || process.env.HOME
+    || process.env.USERPROFILE
+    || homedir();
   const os = platform();
   if (os === 'win32') {
     const localAppData = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
@@ -12,7 +19,8 @@ function getPluginsDir() {
   if (os === 'darwin') {
     return join(home, 'Library', 'Application Support', 'jano', 'plugins');
   }
-  const dataDir = process.env.XDG_DATA_HOME || join(home, '.local', 'share');
+  const xdg = process.env.XDG_DATA_HOME;
+  const dataDir = (xdg && !xdg.includes('/snap/')) ? xdg : join(home, '.local', 'share');
   return join(dataDir, 'jano', 'plugins');
 }
 

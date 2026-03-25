@@ -98,7 +98,7 @@ export async function loadPlugins(): Promise<LoadResult> {
     try {
       const entryUrl = pathToFileURL(entryPath).href;
       const mod = await import(entryUrl);
-      const plugin: LanguagePlugin = mod.default ?? mod.plugin ?? mod;
+      const plugin: LanguagePlugin = mod.default?.default ?? mod.default ?? mod.plugin ?? mod;
 
       if (!plugin.name || !plugin.extensions) {
         result.errors.push({ dir, error: 'Plugin does not export a valid LanguagePlugin' });

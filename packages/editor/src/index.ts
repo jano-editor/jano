@@ -135,21 +135,28 @@ async function showHistory() {
 
 // init
 async function start() {
+  const { getPaths } = await import('./plugins/config.ts');
+  const paths = getPaths();
+  console.log(`[jano] config: ${paths.config}`);
+  console.log(`[jano] plugins: ${paths.plugins}`);
+
   const loadResult = await initPlugins();
 
-  // show plugin errors if any
-  if (loadResult.errors.length > 0) {
-    for (const err of loadResult.errors) {
-      process.stderr.write(`Plugin error (${err.dir}): ${err.error}\n`);
-    }
+  console.log(`[jano] loaded ${loadResult.plugins.length} plugin(s)`);
+  for (const p of loadResult.plugins) {
+    console.log(`[jano]   ✓ ${p.manifest.name} v${p.manifest.version} (${p.manifest.extensions.join(', ')})`);
   }
-  if (loadResult.conflicts.length > 0) {
-    for (const conflict of loadResult.conflicts) {
-      process.stderr.write(`Plugin conflict: ${conflict}\n`);
-    }
+  for (const err of loadResult.errors) {
+    console.log(`[jano]   ✗ ${err.dir}: ${err.error}`);
+  }
+  for (const conflict of loadResult.conflicts) {
+    console.log(`[jano]   ⚠ ${conflict}`);
   }
 
   plugin = detectLanguage(filePath);
+  if (plugin) {
+    console.log(`[jano] language: ${plugin.name}`);
+  }
 
   screen.enter();
   process.stdin.setRawMode(true);

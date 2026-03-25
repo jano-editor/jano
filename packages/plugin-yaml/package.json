@@ -8,6 +8,7 @@
     "install-plugin": "pnpm build && node scripts/install.js"
   },
   "devDependencies": {
+    "@jano/plugin-types": "workspace:*",
     "esbuild": "^0.24.0"
   }
 }

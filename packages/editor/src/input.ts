@@ -52,6 +52,17 @@ export function handleKey(
   // F2 = history dialog
   if (key.name === 'f2') return 'history';
 
+  // F3 = format document
+  if (key.name === 'f3' && plugin?.onFormat) {
+    undo.snapshot('format', { x: cursor.x, y: cursor.y }, editor.lines);
+    const ctx = buildContext(editor, cursor, selection, 'format', getViewport(cursor, screen));
+    const result = plugin.onFormat(ctx);
+    if (result) applyEditResult(result, editor, cursor, selection);
+    undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+    clamp(cursor, editor.lines);
+    return 'continue';
+  }
+
   // ctrl shortcuts
   if (key.ctrl) {
     switch (key.name) {
@@ -79,6 +90,7 @@ export function handleKey(
         }
         break;
       }
+
 
       case 'c': {
         const range = sel.getRange(selection, cursor);
