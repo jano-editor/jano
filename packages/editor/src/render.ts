@@ -42,6 +42,7 @@ export function render(
   cursor: CursorState,
   sel: SelectionState,
   plugin: LanguagePlugin | null,
+  pluginVersion?: string,
 ) {
   draw.clear();
 
@@ -58,6 +59,12 @@ export function render(
   const title = ` jano — ${editor.filePath}${langName} `;
   const titleX = Math.floor((w - title.length) / 2);
   draw.text(titleX, 0, title, { fg: [255, 255, 100] });
+
+  // plugin version (right side of border)
+  if (plugin && pluginVersion) {
+    const vText = ` v${pluginVersion} `;
+    draw.text(w - vText.length - 1, 0, vText, { fg: [100, 100, 100] });
+  }
 
   // file content
   for (let y = 0; y < viewH; y++) {

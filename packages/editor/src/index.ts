@@ -7,7 +7,7 @@ import { createUndoManager } from './undo.ts';
 import { parseKey } from './keypress.ts';
 import { handleKey } from './input.ts';
 import { render, getViewDimensions } from './render.ts';
-import { initPlugins, detectLanguage } from './plugins/index.ts';
+import { initPlugins, detectLanguage, getLoadedPlugins } from './plugins/index.ts';
 import type { LanguagePlugin } from './plugins/types.ts';
 
 const filePath = process.argv[2];
@@ -25,12 +25,13 @@ const selection = createSelection();
 const undo = createUndoManager();
 
 let plugin: LanguagePlugin | null = null;
+let pluginVersion: string | undefined;
 let dialogOpen = false;
 
 function update() {
   const { viewW, viewH } = getViewDimensions(screen, editor.lines.length);
   ensureVisible(cursor, viewW, viewH);
-  render(screen, draw, editor, cursor, selection, plugin);
+  render(screen, draw, editor, cursor, selection, plugin, pluginVersion);
 }
 
 async function confirmExit() {
@@ -154,6 +155,10 @@ async function start() {
   }
 
   plugin = detectLanguage(filePath);
+  if (plugin) {
+    const loaded = getLoadedPlugins().find(p => p.plugin === plugin);
+    pluginVersion = loaded?.manifest.version;
+  }
   if (plugin) {
     console.log(`[jano] language: ${plugin.name}`);
   }
