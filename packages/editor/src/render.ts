@@ -10,7 +10,7 @@ import { tokenColors } from './plugins/types.ts';
 function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   const list = [
     ['^Q', 'Exit'],
-    ['^O', 'Save'],
+    ['^S', 'Save'],
     ['^Z', 'Undo'],
     ['^Y', 'Redo'],
     ['^X', 'Cut'],

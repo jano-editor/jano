@@ -69,7 +69,7 @@ export function handleKey(
       case 'q':
         return 'exit';
 
-      case 'o':
+      case 's':
         ed.save(editor);
         break;
 
