@@ -7,14 +7,20 @@ import { getRange, isSelected } from './selection.ts';
 import { tokenizeLine } from './highlight.ts';
 import { tokenColors } from './plugins/types.ts';
 
-const shortcuts = [
-  ['^Q', 'Exit'],
-  ['^O', 'Save'],
-  ['^Z', 'Undo'],
-  ['^Y', 'Redo'],
-  ['^X', 'Cut'],
-  ['^V', 'Paste'],
-];
+function getShortcuts(plugin: LanguagePlugin | null): string[][] {
+  const list = [
+    ['^Q', 'Exit'],
+    ['^O', 'Save'],
+    ['^Z', 'Undo'],
+    ['^Y', 'Redo'],
+    ['^X', 'Cut'],
+    ['^V', 'Paste'],
+  ];
+  if (plugin?.onFormat) {
+    list.push(['F3', 'Format']);
+  }
+  return list;
+}
 
 export function gutterWidth(lineCount: number): number {
   return String(lineCount).length + 1;
@@ -102,8 +108,9 @@ export function render(
   // shortcut help
   const helpY = h - 1;
   let helpX = 0;
-  const pairWidth = Math.floor(w / shortcuts.length);
-  for (const [key, label] of shortcuts) {
+  const sc = getShortcuts(plugin);
+  const pairWidth = Math.floor(w / sc.length);
+  for (const [key, label] of sc) {
     draw.text(helpX, helpY, key, { fg: [0, 0, 0], bg: [200, 200, 200] });
     draw.text(helpX + key.length, helpY, ` ${label}`, { fg: [150, 150, 150] });
     helpX += pairWidth;
