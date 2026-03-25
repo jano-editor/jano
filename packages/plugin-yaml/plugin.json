@@ -1,0 +1,11 @@
+{
+  "name": "jano-plugin-yaml",
+  "version": "1.0.0",
+  "api": 1,
+  "description": "YAML syntax highlighting and formatting",
+  "extensions": [".yml", ".yaml"],
+  "entry": "index.js",
+  "author": "jano-editor",
+  "homepage": "https://janoeditor.dev",
+  "license": "MIT"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@jano/plugin-yaml",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --outfile=dist/index.js",
+    "install-plugin": "pnpm build && node scripts/install.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
