@@ -105,6 +105,33 @@ export function render(
     }
   }
 
+  // vertical scrollbar (on the right border)
+  if (editor.lines.length > viewH) {
+    const scrollRatio = cm.scrollY / (editor.lines.length - viewH);
+    const thumbSize = Math.max(1, Math.round(viewH * (viewH / editor.lines.length)));
+    const thumbPos = Math.round(scrollRatio * (viewH - thumbSize));
+    for (let y = 0; y < viewH; y++) {
+      const screenY = contentTop + y;
+      if (y >= thumbPos && y < thumbPos + thumbSize) {
+        draw.char(w - 1, screenY, '┃', { fg: [140, 140, 140] });
+      }
+    }
+  }
+
+  // horizontal scrollbar (on the bottom border)
+  const maxLineLen = Math.max(...editor.lines.slice(cm.scrollY, cm.scrollY + viewH).map(l => l.length), 0);
+  if (maxLineLen > viewW) {
+    const scrollRatio = cm.scrollX / (maxLineLen - viewW);
+    const thumbSize = Math.max(2, Math.round(viewW * (viewW / maxLineLen)));
+    const thumbPos = Math.round(scrollRatio * (viewW - thumbSize));
+    const barY = h - 2; // bottom border line
+    for (let x = 0; x < viewW; x++) {
+      if (x >= thumbPos && x < thumbPos + thumbSize) {
+        draw.char(1 + gw + x, barY, '━', { fg: [140, 140, 140] });
+      }
+    }
+  }
+
   // status bar
   const p = cm.primary;
   const statusY = h - 3;
