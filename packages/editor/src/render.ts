@@ -59,7 +59,7 @@ export function render(
   }
   // title
   const langName = plugin ? ` [${plugin.name}]` : "";
-  const title = ` jano — ${editor.filePath}${langName} `;
+  const title = ` jano — ${editor.filePath || "untitled"}${langName} `;
   const titleX = Math.floor((w - title.length) / 2);
   draw.text(titleX, 0, title, { fg: [230, 200, 100] });
 

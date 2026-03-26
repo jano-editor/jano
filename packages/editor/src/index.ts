@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createScreen, createDraw, showDialog, showSearch } from "@jano/ui";
-import { createEditor, save } from "./editor.ts";
+import { createEditor, saveAs } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
 import { parseKey } from "./keypress.ts";
@@ -10,12 +10,7 @@ import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.t
 import { getPaths } from "./plugins/config.ts";
 import type { LanguagePlugin } from "./plugins/types.ts";
 
-const filePath = process.argv[2];
-
-if (!filePath) {
-  console.error("Usage: jano <file>");
-  process.exit(1);
-}
+const filePath = process.argv[2] || undefined;
 
 const screen = createScreen();
 const draw = createDraw(screen);
@@ -33,6 +28,98 @@ function update() {
   render(screen, draw, editor, cm, plugin, pluginVersion);
 }
 
+function reloadPlugin() {
+  plugin = detectLanguage(editor.filePath);
+  if (plugin) {
+    const loaded = getLoadedPlugins().find((p) => p.plugin === plugin);
+    pluginVersion = loaded?.manifest.version;
+  } else {
+    pluginVersion = undefined;
+  }
+}
+
+async function trySave(filePath: string) {
+  // check if file exists → overwrite warning
+  const { existsSync } = await import("node:fs");
+  if (existsSync(filePath) && filePath !== editor.filePath) {
+    dialogOpen = true;
+    const confirm = await showDialog(
+      screen,
+      draw,
+      {
+        title: "Overwrite?",
+        message: `"${filePath}" already exists. Overwrite?`,
+        buttons: [
+          { label: "Overwrite", value: "yes" },
+          { label: "Cancel", value: "no" },
+        ],
+        border: "round",
+      },
+      update,
+    );
+    dialogOpen = false;
+    if (confirm.type !== "button" || confirm.value !== "yes") return false;
+  }
+
+  try {
+    saveAs(editor, filePath);
+    reloadPlugin();
+    return true;
+  } catch (err) {
+    dialogOpen = true;
+    await showDialog(
+      screen,
+      draw,
+      {
+        title: "Error",
+        message: `Could not save: ${err instanceof Error ? err.message : String(err)}`,
+        buttons: [{ label: "OK", value: "ok" }],
+        border: "round",
+      },
+      update,
+    );
+    dialogOpen = false;
+    return false;
+  }
+}
+
+async function saveWithDialog() {
+  dialogOpen = true;
+
+  const result = await showDialog(
+    screen,
+    draw,
+    {
+      title: "Save As",
+      message: "Enter file name:",
+      input: true,
+      inputPlaceholder: "filename.ext",
+      buttons: [
+        { label: "Save", value: "save" },
+        { label: "Cancel", value: "cancel" },
+      ],
+      border: "round",
+      width: 50,
+    },
+    update,
+  );
+
+  dialogOpen = false;
+
+  let targetPath = "";
+  if (result.type === "button" && result.value === "save" && result.inputValue) {
+    targetPath = result.inputValue;
+  } else if (result.type === "input" && result.value) {
+    targetPath = result.value;
+  }
+
+  if (targetPath) {
+    await trySave(targetPath);
+  }
+
+  update();
+}
+
 async function confirmExit() {
   if (!editor.dirty) {
     screen.leave();
@@ -46,7 +133,7 @@ async function confirmExit() {
     draw,
     {
       title: "Unsaved Changes",
-      message: `Save changes to "${editor.filePath}" before closing?`,
+      message: `Save changes to "${editor.filePath || "untitled"}" before closing?`,
       buttons: [
         { label: "Save", value: "save" },
         { label: "Discard", value: "discard" },
@@ -61,7 +148,19 @@ async function confirmExit() {
 
   if (result.type === "button") {
     if (result.value === "save") {
-      save(editor);
+      if (!editor.filePath) {
+        await saveWithDialog();
+        if (!editor.filePath) {
+          update();
+          return;
+        }
+      } else {
+        const ok = await trySave(editor.filePath);
+        if (!ok) {
+          update();
+          return;
+        }
+      }
       screen.leave();
       process.exit(0);
     }
@@ -310,11 +409,13 @@ async function start() {
     console.log(`[jano]   ⚠ ${conflict}`);
   }
 
-  plugin = detectLanguage(filePath);
-  if (plugin) {
-    const loaded = getLoadedPlugins().find((p) => p.plugin === plugin);
-    pluginVersion = loaded?.manifest.version;
-    console.log(`[jano] language: ${plugin.name}`);
+  if (filePath) {
+    plugin = detectLanguage(filePath);
+    if (plugin) {
+      const loaded = getLoadedPlugins().find((p) => p.plugin === plugin);
+      pluginVersion = loaded?.manifest.version;
+      console.log(`[jano] language: ${plugin.name}`);
+    }
   }
 
   screen.enter();
@@ -342,6 +443,13 @@ process.stdin.on("data", (data) => {
       return;
     case "goto":
       void openGoto();
+      return;
+    case "save":
+      if (editor.filePath) {
+        void trySave(editor.filePath).then(() => update());
+      } else {
+        void saveWithDialog();
+      }
       return;
   }
 

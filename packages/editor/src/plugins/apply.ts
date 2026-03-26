@@ -1,6 +1,6 @@
-import type { EditResult } from './types.ts';
-import type { EditorState } from '../editor.ts';
-import type { CursorManager, SingleCursor } from '../cursor-manager.ts';
+import type { EditResult } from "./types.ts";
+import type { EditorState } from "../editor.ts";
+import type { CursorManager, SingleCursor } from "../cursor-manager.ts";
 
 // apply edit result, optionally targeting a specific cursor instead of primary
 export function applyEditResult(
@@ -10,8 +10,14 @@ export function applyEditResult(
   targetCursor?: SingleCursor,
 ) {
   if (result.replaceAll) {
-    editor.lines = result.replaceAll;
-    editor.dirty = true;
+    // only apply if content actually differs
+    const changed =
+      result.replaceAll.length !== editor.lines.length ||
+      result.replaceAll.some((l, i) => l !== editor.lines[i]);
+    if (changed) {
+      editor.lines = result.replaceAll;
+      editor.dirty = true;
+    }
   }
 
   if (result.edits) {
@@ -32,7 +38,7 @@ export function applyEditResult(
       } else {
         const firstPart = editor.lines[start.line].substring(0, start.col);
         const lastPart = editor.lines[end.line].substring(end.col);
-        const newLines = edit.text.split('\n');
+        const newLines = edit.text.split("\n");
         newLines[0] = firstPart + newLines[0];
         newLines[newLines.length - 1] = newLines[newLines.length - 1] + lastPart;
         editor.lines.splice(start.line, end.line - start.line + 1, ...newLines);

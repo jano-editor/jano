@@ -9,7 +9,7 @@ import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
 
-export type HandleKeyResult = "continue" | "exit" | "history" | "search" | "goto";
+export type HandleKeyResult = "continue" | "exit" | "history" | "search" | "goto" | "save";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -138,16 +138,24 @@ export function handleKey(
     return "continue";
   }
 
-  // --- function keys ---
-  if (key.name === "f2") return "history";
-
-  if (key.name === "f3" && plugin?.onFormat) {
-    snap(undo, "format", cm, editor);
-    const ctx = buildContext(editor, cm, getViewport(cm, screen));
-    const result = plugin.onFormat(ctx);
-    if (result) applyEditResult(result, editor, cm);
-    commit(undo, cm, editor);
-    cm.clampAll(editor.lines);
+  // --- function keys (never insert as text) ---
+  if (key.name === "f1" || key.name === "f2" || key.name === "f3" || key.name === "f4") {
+    if (key.name === "f2") return "history";
+    if (key.name === "f3" && plugin?.onFormat) {
+      const linesBefore = [...editor.lines];
+      snap(undo, "format", cm, editor);
+      const ctx = buildContext(editor, cm, getViewport(cm, screen));
+      const result = plugin.onFormat(ctx);
+      if (result) applyEditResult(result, editor, cm);
+      // only commit if content actually changed
+      const changed =
+        editor.lines.length !== linesBefore.length ||
+        editor.lines.some((l, i) => l !== linesBefore[i]);
+      if (changed) {
+        commit(undo, cm, editor);
+      }
+      cm.clampAll(editor.lines);
+    }
     return "continue";
   }
 
@@ -160,8 +168,7 @@ export function handleKey(
         return "exit";
 
       case "s":
-        ed.save(editor);
-        break;
+        return "save";
 
       case "f":
         return "search";

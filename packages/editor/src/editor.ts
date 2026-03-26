@@ -1,32 +1,60 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 export interface EditorState {
   lines: string[];
   filePath: string;
   dirty: boolean;
   clipboardParts: string[];
+  isNewFile: boolean;
 }
 
-export function createEditor(filePath: string): EditorState {
-  let lines: string[];
-  try {
-    lines = readFileSync(filePath, 'utf8').split('\n');
-  } catch {
-    console.error(`Cannot open: ${filePath}`);
-    process.exit(1);
+export function createEditor(filePath?: string): EditorState {
+  // no argument: untitled new file
+  if (!filePath) {
+    return {
+      lines: [""],
+      filePath: "",
+      dirty: false,
+      clipboardParts: [],
+      isNewFile: true,
+    };
   }
 
+  // argument given but file doesn't exist: new file with known path
+  if (!existsSync(filePath)) {
+    return {
+      lines: [""],
+      filePath,
+      dirty: false,
+      clipboardParts: [],
+      isNewFile: true,
+    };
+  }
+
+  // existing file
+  const lines = readFileSync(filePath, "utf8").split("\n");
   return {
     lines,
     filePath,
     dirty: false,
     clipboardParts: [],
+    isNewFile: false,
   };
 }
 
-export function save(state: EditorState) {
-  writeFileSync(state.filePath, state.lines.join('\n'), 'utf8');
+export function save(state: EditorState): boolean {
+  if (!state.filePath) return false;
+  writeFileSync(state.filePath, state.lines.join("\n"), "utf8");
   state.dirty = false;
+  state.isNewFile = false;
+  return true;
+}
+
+export function saveAs(state: EditorState, filePath: string) {
+  state.filePath = filePath;
+  writeFileSync(filePath, state.lines.join("\n"), "utf8");
+  state.dirty = false;
+  state.isNewFile = false;
 }
 
 export function insertChar(state: EditorState, x: number, y: number, ch: string): number {
@@ -62,7 +90,12 @@ export function deleteCharBack(state: EditorState, x: number, y: number): { x: n
   return { x, y };
 }
 
-export function deleteWordBack(state: EditorState, x: number, y: number, boundaryX: number): { x: number; y: number } {
+export function deleteWordBack(
+  state: EditorState,
+  x: number,
+  y: number,
+  boundaryX: number,
+): { x: number; y: number } {
   if (x > 0) {
     const line = state.lines[y];
     state.lines[y] = line.substring(0, boundaryX) + line.substring(x);
@@ -103,7 +136,7 @@ export function deleteCharForward(state: EditorState, x: number, y: number) {
 
 export function insertTab(state: EditorState, x: number, y: number): number {
   const line = state.lines[y];
-  state.lines[y] = line.substring(0, x) + '  ' + line.substring(x);
+  state.lines[y] = line.substring(0, x) + "  " + line.substring(x);
   state.dirty = true;
   return x + 2;
 }
@@ -125,16 +158,21 @@ export function moveLinesDown(state: EditorState, startLine: number, endLine: nu
 }
 
 export function cutLine(state: EditorState, y: number): { clipText: string; newY: number } {
-  const clipText = state.lines[y] + '\n';
+  const clipText = state.lines[y] + "\n";
   state.lines.splice(y, 1);
-  if (state.lines.length === 0) state.lines = [''];
+  if (state.lines.length === 0) state.lines = [""];
   const newY = Math.min(y, state.lines.length - 1);
   state.dirty = true;
   return { clipText, newY };
 }
 
-export function pasteText(state: EditorState, x: number, y: number, text: string): { x: number; y: number } {
-  const pasteLines = text.split('\n');
+export function pasteText(
+  state: EditorState,
+  x: number,
+  y: number,
+  text: string,
+): { x: number; y: number } {
+  const pasteLines = text.split("\n");
 
   if (pasteLines.length === 1) {
     const line = state.lines[y];
