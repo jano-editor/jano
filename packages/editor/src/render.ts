@@ -49,18 +49,22 @@ export function render(
   const { gw, contentTop, viewH, viewW } = getViewDimensions(screen, editor.lines.length);
 
   // outer border
-  draw.rect(0, 0, w, h - 1, { fg: [80, 80, 80], border: 'round' });
+  draw.rect(0, 0, w, h - 1, { fg: [55, 60, 70], border: 'round' });
 
-  // title bar
+  // title bar background
+  for (let x = 1; x < w - 1; x++) {
+    draw.char(x, 0, '─', { fg: [55, 60, 70] });
+  }
+  // title
   const langName = plugin ? ` [${plugin.name}]` : '';
   const title = ` jano — ${editor.filePath}${langName} `;
   const titleX = Math.floor((w - title.length) / 2);
-  draw.text(titleX, 0, title, { fg: [255, 255, 100] });
+  draw.text(titleX, 0, title, { fg: [230, 200, 100] });
 
-  // plugin version (right side of border)
+  // plugin version (right side)
   if (plugin && pluginVersion) {
     const vText = ` v${pluginVersion} `;
-    draw.text(w - vText.length - 1, 0, vText, { fg: [100, 100, 100] });
+    draw.text(w - vText.length - 1, 0, vText, { fg: [80, 85, 95] });
   }
 
   // file content
@@ -68,9 +72,10 @@ export function render(
     const lineIdx = y + cm.scrollY;
     if (lineIdx >= editor.lines.length) break;
 
-    // line number
+    // line number (highlight current line)
     const lineNum = String(lineIdx + 1).padStart(gw - 1, ' ') + ' ';
-    draw.text(1, contentTop + y, lineNum, { fg: [100, 100, 100] });
+    const isCurrentLine = lineIdx === cm.primary.y;
+    draw.text(1, contentTop + y, lineNum, { fg: isCurrentLine ? [180, 185, 195] : [70, 75, 85] });
 
     // tokenize line for highlighting
     const line = editor.lines[lineIdx];
@@ -135,21 +140,41 @@ export function render(
   // status bar
   const p = cm.primary;
   const statusY = h - 3;
-  draw.line(1, statusY, w - 2, statusY, { fg: [80, 80, 80] });
-  const modified = editor.dirty ? ' [modified]' : '';
-  const multi = cm.isMulti ? ` (${cm.count} cursors)` : '';
-  const status = ` Ln ${p.y + 1}, Col ${p.x + 1}  ${editor.lines.length} lines${modified}${multi}`;
-  draw.text(2, statusY, status, { fg: [200, 200, 200] });
+  // fill status bar background
+  for (let x = 1; x < w - 1; x++) {
+    draw.char(x, statusY, ' ', { bg: [45, 50, 60] });
+  }
+  // left: cursor position
+  const posInfo = ` Ln ${p.y + 1}, Col ${p.x + 1}`;
+  draw.text(2, statusY, posInfo, { fg: [180, 185, 195], bg: [45, 50, 60] });
+  // center: file info
+  const modified = editor.dirty ? ' ●' : '';
+  const fileInfo = `${editor.lines.length} lines${modified}`;
+  const fileInfoX = Math.floor((w - fileInfo.length) / 2);
+  draw.text(fileInfoX, statusY, fileInfo, { fg: editor.dirty ? [229, 192, 123] : [130, 135, 145], bg: [45, 50, 60] });
+  // right: multi-cursor info
+  if (cm.isMulti) {
+    const multiInfo = `${cm.count} cursors `;
+    draw.text(w - multiInfo.length - 1, statusY, multiInfo, { fg: [100, 200, 255], bg: [45, 50, 60] });
+  }
 
   // shortcut help
   const helpY = h - 1;
-  let helpX = 0;
   const sc = getShortcuts(plugin);
-  const pairWidth = Math.floor(w / sc.length);
-  for (const [key, label] of sc) {
-    draw.text(helpX, helpY, key, { fg: [0, 0, 0], bg: [200, 200, 200] });
-    draw.text(helpX + key.length, helpY, ` ${label}`, { fg: [150, 150, 150] });
-    helpX += pairWidth;
+  // fill background
+  for (let x = 0; x < w; x++) {
+    draw.char(x, helpY, ' ', { bg: [35, 38, 45] });
+  }
+  // draw shortcuts evenly spaced with separator
+  let helpX = 1;
+  for (let i = 0; i < sc.length; i++) {
+    const [key, label] = sc[i];
+    draw.text(helpX, helpY, key, { fg: [220, 220, 220], bg: [60, 65, 75] });
+    draw.text(helpX + key.length, helpY, ` ${label}`, { fg: [120, 125, 135], bg: [35, 38, 45] });
+    helpX += key.length + label.length + 3;
+    if (i < sc.length - 1) {
+      draw.text(helpX - 1, helpY, '│', { fg: [55, 58, 65], bg: [35, 38, 45] });
+    }
   }
 
   draw.flush();
