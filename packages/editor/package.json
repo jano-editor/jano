@@ -7,6 +7,7 @@
     "jano": "src/index.ts"
   },
   "dependencies": {
-    "@jano/ui": "workspace:*"
+    "@jano/ui": "workspace:*",
+    "@jano/plugin-types": "workspace:*"
   }
 }

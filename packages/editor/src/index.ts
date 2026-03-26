@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { createScreen, createDraw, showDialog } from '@jano/ui';
 import { createEditor, save } from './editor.ts';
-import { createCursor, ensureVisible } from './cursor.ts';
-import { createSelection } from './selection.ts';
+import { createCursorManager } from './cursor-manager.ts';
 import { createUndoManager } from './undo.ts';
 import { parseKey } from './keypress.ts';
 import { handleKey } from './input.ts';
@@ -20,8 +19,7 @@ if (!filePath) {
 const screen = createScreen();
 const draw = createDraw(screen);
 const editor = createEditor(filePath);
-const cursor = createCursor();
-const selection = createSelection();
+const cm = createCursorManager();
 const undo = createUndoManager();
 
 let plugin: LanguagePlugin | null = null;
@@ -30,8 +28,8 @@ let dialogOpen = false;
 
 function update() {
   const { viewW, viewH } = getViewDimensions(screen, editor.lines.length);
-  ensureVisible(cursor, viewW, viewH);
-  render(screen, draw, editor, cursor, selection, plugin, pluginVersion);
+  cm.ensureVisible(viewW, viewH);
+  render(screen, draw, editor, cm, plugin, pluginVersion);
 }
 
 async function confirmExit() {
@@ -88,7 +86,6 @@ async function showHistory() {
 
   dialogOpen = true;
 
-  // build history list with readable descriptions
   const items: string[] = ['  0. Original file'];
   for (let i = 0; i < history.length; i++) {
     const entry = history[i];
@@ -118,15 +115,15 @@ async function showHistory() {
     const idx = parseInt(inputVal, 10);
 
     if (idx === 0) {
-      // jump to original: undo everything
       while (true) {
-        const undone = undo.undo(editor.lines, cursor);
+        const undone = undo.undo(editor.lines, cm.primary);
         if (!undone) break;
-        editor.lines = undone;
+        editor.lines = undone.lines;
+        if (undone.cursorState) cm.restoreState(undone.cursorState);
       }
       editor.dirty = false;
     } else if (idx >= 1 && idx <= history.length) {
-      editor.lines = undo.jumpTo(idx - 1, editor.lines, cursor);
+      editor.lines = undo.jumpTo(idx - 1, editor.lines, cm.primary);
       editor.dirty = true;
     }
   }
@@ -158,8 +155,6 @@ async function start() {
   if (plugin) {
     const loaded = getLoadedPlugins().find(p => p.plugin === plugin);
     pluginVersion = loaded?.manifest.version;
-  }
-  if (plugin) {
     console.log(`[jano] language: ${plugin.name}`);
   }
 
@@ -174,7 +169,7 @@ process.stdin.on('data', (data) => {
   if (dialogOpen) return;
 
   const key = parseKey(data);
-  const result = handleKey(key, editor, cursor, selection, screen, undo, plugin);
+  const result = handleKey(key, editor, cm, screen, undo, plugin);
 
   switch (result) {
     case 'exit':

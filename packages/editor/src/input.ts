@@ -1,22 +1,45 @@
 import type { Screen } from '@jano/ui';
 import type { EditorState } from './editor.ts';
-import type { CursorState } from './cursor.ts';
-import type { SelectionState } from './selection.ts';
 import type { KeyEvent } from './keypress.ts';
 import type { UndoManager } from './undo.ts';
-import type { LanguagePlugin } from './plugins/types.ts';
-import { clamp, moveLeft, moveRight, moveWordLeft, moveWordRight, wordBoundaryLeft, wordBoundaryRight } from './cursor.ts';
-import * as sel from './selection.ts';
+import type { LanguagePlugin, ActionType } from './plugins/types.ts';
+import type { CursorManager, SingleCursor } from './cursor-manager.ts';
+import { wordBoundaryLeft, wordBoundaryRight } from './cursor-manager.ts';
 import * as ed from './editor.ts';
-import { buildContext } from './plugins/context.ts';
+import { buildContext, buildAction } from './plugins/context.ts';
 import { applyEditResult } from './plugins/apply.ts';
 
 export type HandleKeyResult = 'continue' | 'exit' | 'history';
 
-function getViewport(cursor: CursorState, screen: Screen) {
+function notifyPlugin(
+  plugin: LanguagePlugin | null,
+  actionType: ActionType,
+  c: SingleCursor,
+  prevPos: { x: number; y: number },
+  editor: EditorState,
+  cm: CursorManager,
+  screen: Screen,
+  extra?: { char?: string; pastedText?: string },
+) {
+  if (!plugin?.onCursorAction) return;
+  const action = buildAction(actionType, c, { line: prevPos.y, col: prevPos.x }, extra);
+  const ctx = buildContext(editor, cm, getViewport(cm, screen), action);
+  const result = plugin.onCursorAction(ctx);
+  if (result) applyEditResult(result, editor, cm, c);
+}
+
+function snap(undo: UndoManager, label: string, cm: CursorManager, editor: EditorState) {
+  undo.snapshot(label, { x: cm.primary.x, y: cm.primary.y }, editor.lines, cm.saveState());
+}
+
+function commit(undo: UndoManager, cm: CursorManager, editor: EditorState) {
+  undo.commit({ x: cm.primary.x, y: cm.primary.y }, editor.lines, cm.saveState());
+}
+
+function getViewport(cm: CursorManager, screen: Screen) {
   return {
-    firstLine: cursor.scrollY,
-    lastLine: cursor.scrollY + screen.height - 5,
+    firstLine: cm.scrollY,
+    lastLine: cm.scrollY + screen.height - 5,
     width: screen.width,
     height: screen.height,
   };
@@ -25,83 +48,115 @@ function getViewport(cursor: CursorState, screen: Screen) {
 export function handleKey(
   key: KeyEvent,
   editor: EditorState,
-  cursor: CursorState,
-  selection: SelectionState,
+  cm: CursorManager,
   screen: Screen,
   undo: UndoManager,
   plugin: LanguagePlugin | null,
 ): HandleKeyResult {
+
+  // --- multi-cursor: ctrl+shift+up/down ---
+  if (key.shift && key.ctrl && (key.name === 'up' || key.name === 'down')) {
+    const allCursors = cm.all;
+    if (key.name === 'up') {
+      const topmost = Math.min(...allCursors.map(c => c.y));
+      const newY = topmost - 1;
+      if (newY >= 0) {
+        const newX = Math.min(cm.primary.x, editor.lines[newY].length);
+        cm.addAbove(newX, newY);
+        cm.dedup();
+      }
+    } else {
+      const bottommost = Math.max(...allCursors.map(c => c.y));
+      const newY = bottommost + 1;
+      if (newY < editor.lines.length) {
+        const newX = Math.min(cm.primary.x, editor.lines[newY].length);
+        cm.addBelow();
+        const last = cm.all[cm.all.length - 1];
+        last.x = newX;
+        last.y = newY;
+        cm.dedup();
+      }
+    }
+    return 'continue';
+  }
+
+  // --- selection with shift ---
+
   // shift+ctrl+arrow: select word by word
   if (key.shift && key.ctrl && (key.name === 'left' || key.name === 'right')) {
-    sel.startOrExtend(selection, cursor);
-
-    if (key.name === 'left') moveWordLeft(cursor, editor.lines);
-    if (key.name === 'right') moveWordRight(cursor, editor.lines);
-
-    clamp(cursor, editor.lines);
-    sel.collapseIfEmpty(selection, cursor);
+    cm.startSelectionAll();
+    cm.moveWordAll(key.name, editor.lines);
+    cm.clampAll(editor.lines);
+    cm.collapseEmptySelections();
     return 'continue';
   }
 
-  // shift+arrow: start or extend selection
+  // shift+arrow: select char/line
   if (key.shift && ['up', 'down', 'left', 'right', 'home', 'end'].includes(key.name)) {
-    sel.startOrExtend(selection, cursor);
+    cm.startSelectionAll();
+    cm.moveAll(key.name as any, editor.lines, screen.height - 2);
+    cm.clampAll(editor.lines);
 
-    switch (key.name) {
-      case 'up': cursor.y--; break;
-      case 'down': cursor.y++; break;
-      case 'left': cursor.x--; break;
-      case 'right': cursor.x++; break;
-      case 'home': cursor.x = 0; break;
-      case 'end': cursor.x = editor.lines[cursor.y].length; break;
+    // shift+up/down with multi-cursor: merge into one selection
+    if (cm.isMulti && (key.name === 'up' || key.name === 'down')) {
+      cm.mergeIntoSelection(key.name);
+      return 'continue';
     }
 
-    clamp(cursor, editor.lines);
-    sel.collapseIfEmpty(selection, cursor);
+    cm.collapseEmptySelections();
     return 'continue';
   }
 
-  // alt+up/down: move lines
+  // --- escape ---
+  if (key.raw.length === 1 && key.raw[0] === 0x1b) {
+    if (cm.isMulti) {
+      cm.clearExtras();
+      return 'continue';
+    }
+  }
+
+  // --- alt+up/down: move lines ---
   if (key.alt && (key.name === 'up' || key.name === 'down')) {
-    const selRange = sel.getRange(selection, cursor);
-    const startLine = selRange ? selRange.start.y : cursor.y;
-    const endLine = selRange ? selRange.end.y : cursor.y;
+    const p = cm.primary;
+    const range = cm.getSelection(p);
+    const startLine = range ? range.start.y : p.y;
+    const endLine = range ? range.end.y : p.y;
 
-    undo.snapshot('move-line', { x: cursor.x, y: cursor.y }, editor.lines);
-
+    snap(undo, 'move-line', cm, editor);
     if (key.name === 'up') {
       if (ed.moveLinesUp(editor, startLine, endLine)) {
-        cursor.y--;
-        if (selection.anchor) selection.anchor = { x: selection.anchor.x, y: selection.anchor.y - 1 };
+        p.y--;
+        if (p.anchor) p.anchor = { x: p.anchor.x, y: p.anchor.y - 1 };
       }
     } else {
       if (ed.moveLinesDown(editor, startLine, endLine)) {
-        cursor.y++;
-        if (selection.anchor) selection.anchor = { x: selection.anchor.x, y: selection.anchor.y + 1 };
+        p.y++;
+        if (p.anchor) p.anchor = { x: p.anchor.x, y: p.anchor.y + 1 };
       }
     }
-
-    undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
-    clamp(cursor, editor.lines);
+    commit(undo, cm, editor);
+    cm.clampAll(editor.lines);
     return 'continue';
   }
 
-  // F2 = history dialog
+  // --- function keys ---
   if (key.name === 'f2') return 'history';
 
-  // F3 = format document
   if (key.name === 'f3' && plugin?.onFormat) {
-    undo.snapshot('format', { x: cursor.x, y: cursor.y }, editor.lines);
-    const ctx = buildContext(editor, cursor, selection, 'format', getViewport(cursor, screen));
+    const p = cm.primary;
+    snap(undo, 'format', cm, editor);
+    const ctx = buildContext(editor, cm, getViewport(cm, screen));
     const result = plugin.onFormat(ctx);
-    if (result) applyEditResult(result, editor, cursor, selection);
-    undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
-    clamp(cursor, editor.lines);
+    if (result) applyEditResult(result, editor, cm);
+    commit(undo, cm, editor);
+    cm.clampAll(editor.lines);
     return 'continue';
   }
 
-  // ctrl shortcuts
+  // --- ctrl shortcuts ---
   if (key.ctrl) {
+    const p = cm.primary;
+
     switch (key.name) {
       case 'q':
         return 'exit';
@@ -110,163 +165,256 @@ export function handleKey(
         ed.save(editor);
         break;
 
+
       case 'left':
-        moveWordLeft(cursor, editor.lines);
+        cm.moveWordAll('left', editor.lines);
         break;
 
       case 'right':
-        moveWordRight(cursor, editor.lines);
+        cm.moveWordAll('right', editor.lines);
         break;
 
       case 'backspace': {
-        undo.snapshot('delete-word', { x: cursor.x, y: cursor.y }, editor.lines);
-        const selR = sel.getRange(selection, cursor);
-        if (selR) {
-          sel.deleteRange(selR, editor, cursor, selection);
-        } else {
-          const boundary = wordBoundaryLeft(editor.lines[cursor.y], cursor.x);
-          const pos = ed.deleteWordBack(editor, cursor.x, cursor.y, boundary);
-          cursor.x = pos.x;
-          cursor.y = pos.y;
-        }
-        undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+        snap(undo, 'delete-word', cm, editor);
+        cm.forEachBottomUp((c) => {
+          if (c.anchor) {
+            cm.deleteSelection(c, editor.lines);
+            editor.dirty = true;
+          } else {
+            const b = wordBoundaryLeft(editor.lines[c.y], c.x);
+            const pos = ed.deleteWordBack(editor, c.x, c.y, b);
+            c.x = pos.x;
+            c.y = pos.y;
+          }
+        });
+        commit(undo, cm, editor);
         break;
       }
 
       case 'delete': {
-        undo.snapshot('delete-word', { x: cursor.x, y: cursor.y }, editor.lines);
-        const selR2 = sel.getRange(selection, cursor);
-        if (selR2) {
-          sel.deleteRange(selR2, editor, cursor, selection);
-        } else {
-          const boundary = wordBoundaryRight(editor.lines[cursor.y], cursor.x);
-          ed.deleteWordForward(editor, cursor.x, cursor.y, boundary);
-        }
-        undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+        snap(undo, 'delete-word', cm, editor);
+        cm.forEachBottomUp((c) => {
+          if (c.anchor) {
+            cm.deleteSelection(c, editor.lines);
+            editor.dirty = true;
+          } else {
+            const b = wordBoundaryRight(editor.lines[c.y], c.x);
+            ed.deleteWordForward(editor, c.x, c.y, b);
+          }
+        });
+        commit(undo, cm, editor);
         break;
       }
 
       case 'z': {
-        const result = undo.undo(editor.lines, cursor);
+        const result = undo.undo(editor.lines, p);
         if (result) {
-          editor.lines = result;
+          editor.lines = result.lines;
           editor.dirty = true;
+          if (result.cursorState) cm.restoreState(result.cursorState);
         }
         break;
       }
 
       case 'y': {
-        const result = undo.redo(editor.lines, cursor);
+        const result = undo.redo(editor.lines, p);
         if (result) {
-          editor.lines = result;
+          editor.lines = result.lines;
           editor.dirty = true;
+          if (result.cursorState) cm.restoreState(result.cursorState);
         }
         break;
       }
 
-
       case 'c': {
-        const range = sel.getRange(selection, cursor);
-        if (range) {
-          editor.clipboardText = sel.getText(range, editor.lines);
-          sel.clear(selection);
+        const parts: string[] = [];
+        cm.forEachAll((c) => {
+          const text = cm.getSelectedText(c, editor.lines);
+          if (text) parts.push(text);
+        });
+        if (parts.length > 0) {
+          editor.clipboardParts = parts;
+          cm.clearSelectionAll();
         }
         break;
       }
 
       case 'x': {
-        undo.snapshot('cut', { x: cursor.x, y: cursor.y }, editor.lines);
-        const range = sel.getRange(selection, cursor);
-        if (range) {
-          editor.clipboardText = sel.getText(range, editor.lines);
-          sel.deleteRange(range, editor, cursor, selection);
-        } else {
-          const result = ed.cutLine(editor, cursor.y);
-          editor.clipboardText = result.clipText;
-          cursor.y = result.newY;
-          cursor.x = Math.min(cursor.x, editor.lines[cursor.y].length);
-        }
-        undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+        snap(undo, 'cut', cm, editor);
+        const parts: string[] = [];
+        cm.forEachBottomUp((c) => {
+          if (c.anchor) {
+            parts.unshift(cm.getSelectedText(c, editor.lines));
+            cm.deleteSelection(c, editor.lines);
+            editor.dirty = true;
+          } else {
+            parts.unshift(editor.lines[c.y]);
+            editor.lines.splice(c.y, 1);
+            if (editor.lines.length === 0) editor.lines = [''];
+            if (c.y >= editor.lines.length) c.y = editor.lines.length - 1;
+            c.x = Math.min(c.x, editor.lines[c.y].length);
+            editor.dirty = true;
+          }
+        });
+        editor.clipboardParts = parts;
+        commit(undo, cm, editor);
         break;
       }
 
       case 'v': {
-        if (editor.clipboardText.length > 0) {
-          undo.snapshot('paste', { x: cursor.x, y: cursor.y }, editor.lines);
-          const range = sel.getRange(selection, cursor);
-          if (range) sel.deleteRange(range, editor, cursor, selection);
-          const pos = ed.pasteText(editor, cursor.x, cursor.y, editor.clipboardText);
-          cursor.x = pos.x;
-          cursor.y = pos.y;
-          undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+        if (editor.clipboardParts.length === 0) break;
+        snap(undo, 'paste', cm, editor);
+
+        const parts = editor.clipboardParts;
+        const cursorCount = cm.count;
+
+        if (parts.length === cursorCount) {
+          // same number of parts as cursors: each cursor gets its own part
+          let i = 0;
+          cm.forEachBottomUp((c) => {
+            // find which part this cursor gets (forEachBottomUp reverses order)
+            const partIdx = cm.all.indexOf(c);
+            if (c.anchor) {
+              cm.deleteSelection(c, editor.lines);
+              editor.dirty = true;
+            }
+            const pos = ed.pasteText(editor, c.x, c.y, parts[partIdx]);
+            c.x = pos.x;
+            c.y = pos.y;
+            i++;
+          });
+        } else if (cursorCount === 1) {
+          // single cursor, multiple parts: paste all parts as lines
+          const c = cm.primary;
+          if (c.anchor) {
+            cm.deleteSelection(c, editor.lines);
+            editor.dirty = true;
+          }
+          // insert all parts: each on its own line, last at cursor position
+          for (let i = 0; i < parts.length - 1; i++) {
+            editor.lines.splice(c.y + i, 0, parts[i]);
+          }
+          c.y += parts.length - 1;
+          const lastPart = parts[parts.length - 1];
+          const line = editor.lines[c.y];
+          editor.lines[c.y] = line.substring(0, c.x) + lastPart + line.substring(c.x);
+          c.x += lastPart.length;
+          editor.dirty = true;
+        } else {
+          // different count: paste everything joined at each cursor
+          const joined = parts.join('\n');
+          cm.forEachBottomUp((c) => {
+            if (c.anchor) {
+              cm.deleteSelection(c, editor.lines);
+              editor.dirty = true;
+            }
+            const pos = ed.pasteText(editor, c.x, c.y, joined);
+            c.x = pos.x;
+            c.y = pos.y;
+          });
         }
+
+        commit(undo, cm, editor);
         break;
       }
     }
 
-    clamp(cursor, editor.lines);
+    cm.clampAll(editor.lines);
     return 'continue';
   }
 
-  // grab selection before clearing it
-  const selRange = sel.getRange(selection, cursor);
+  // --- normal keys ---
 
   switch (key.name) {
     // navigation
-    case 'up': cursor.y--; break;
-    case 'down': cursor.y++; break;
-    case 'left': moveLeft(cursor, editor.lines); break;
-    case 'right': moveRight(cursor, editor.lines); break;
-    case 'home': cursor.x = 0; break;
-    case 'end': cursor.x = editor.lines[cursor.y].length; break;
-    case 'pageup': cursor.y -= screen.height - 2; break;
-    case 'pagedown': cursor.y += screen.height - 2; break;
+    case 'up':
+    case 'down':
+    case 'left':
+    case 'right':
+    case 'home':
+    case 'end':
+      cm.clearSelectionAll();
+      cm.moveAll(key.name, editor.lines, 0);
+      break;
+    case 'pageup':
+    case 'pagedown':
+      cm.clearSelectionAll();
+      cm.moveAll(key.name, editor.lines, screen.height - 2);
+      break;
 
-    // editing
+    // enter
     case 'enter': {
-      undo.snapshot('enter', { x: cursor.x, y: cursor.y }, editor.lines);
-      if (selRange) sel.deleteRange(selRange, editor, cursor, selection);
+      const p = cm.primary;
+      snap(undo, 'enter', cm, editor);
 
-      const pos = ed.insertNewline(editor, cursor.x, cursor.y);
-      cursor.x = pos.x;
-      cursor.y = pos.y;
-
-      // ask plugin
-      if (plugin?.onNewLine) {
-        const ctx = buildContext(editor, cursor, selection, 'newline', getViewport(cursor, screen));
-        const result = plugin.onNewLine(ctx);
-        if (result) applyEditResult(result, editor, cursor, selection);
+      const sorted = [...cm.all].sort((a, b) => a.y - b.y || a.x - b.x);
+      let lineShift = 0;
+      for (const c of sorted) {
+        c.y += lineShift;
+        const prev = { x: c.x, y: c.y };
+        if (c.anchor) {
+          cm.deleteSelection(c, editor.lines);
+          editor.dirty = true;
+        }
+        const pos = ed.insertNewline(editor, c.x, c.y);
+        c.x = pos.x;
+        c.y = pos.y;
+        notifyPlugin(plugin, 'newline', c, prev, editor, cm, screen);
+        lineShift++;
       }
 
-      undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+      commit(undo, cm, editor);
       break;
     }
+
+    // backspace
     case 'backspace': {
-      undo.snapshot('backspace', { x: cursor.x, y: cursor.y }, editor.lines);
-      if (selRange) {
-        sel.deleteRange(selRange, editor, cursor, selection);
-      } else {
-        const pos = ed.deleteCharBack(editor, cursor.x, cursor.y);
-        cursor.x = pos.x;
-        cursor.y = pos.y;
-      }
-      undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+      const p = cm.primary;
+      snap(undo, 'backspace', cm, editor);
+      cm.forEachBottomUp((c) => {
+        const prev = { x: c.x, y: c.y };
+        if (c.anchor) {
+          cm.deleteSelection(c, editor.lines);
+          editor.dirty = true;
+        } else {
+          const pos = ed.deleteCharBack(editor, c.x, c.y);
+          c.x = pos.x;
+          c.y = pos.y;
+        }
+        notifyPlugin(plugin, 'backspace', c, prev, editor, cm, screen);
+      });
+      commit(undo, cm, editor);
       break;
     }
+
+    // delete
     case 'delete': {
-      undo.snapshot('delete', { x: cursor.x, y: cursor.y }, editor.lines);
-      if (selRange) {
-        sel.deleteRange(selRange, editor, cursor, selection);
-      } else {
-        ed.deleteCharForward(editor, cursor.x, cursor.y);
-      }
-      undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+      const p = cm.primary;
+      snap(undo, 'delete', cm, editor);
+      cm.forEachBottomUp((c) => {
+        const prev = { x: c.x, y: c.y };
+        if (c.anchor) {
+          cm.deleteSelection(c, editor.lines);
+          editor.dirty = true;
+        } else {
+          ed.deleteCharForward(editor, c.x, c.y);
+        }
+        notifyPlugin(plugin, 'delete', c, prev, editor, cm, screen);
+      });
+      commit(undo, cm, editor);
       break;
     }
+
+    // tab
     case 'tab': {
-      undo.snapshot('tab', { x: cursor.x, y: cursor.y }, editor.lines);
-      cursor.x = ed.insertTab(editor, cursor.x, cursor.y);
-      undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+      const p = cm.primary;
+      snap(undo, 'tab', cm, editor);
+      cm.forEachBottomUp((c) => {
+        const prev = { x: c.x, y: c.y };
+        c.x = ed.insertTab(editor, c.x, c.y);
+        notifyPlugin(plugin, 'tab', c, prev, editor, cm, screen);
+      });
+      commit(undo, cm, editor);
       break;
     }
 
@@ -276,24 +424,26 @@ export function handleKey(
       if (ch === 'unknown') break;
       const code = ch.codePointAt(0) ?? 0;
       if (code >= 32) {
-        undo.snapshot('type', { x: cursor.x, y: cursor.y }, editor.lines);
-        if (selRange) sel.deleteRange(selRange, editor, cursor, selection);
-        cursor.x = ed.insertChar(editor, cursor.x, cursor.y, ch);
+        const p = cm.primary;
+        snap(undo, 'type', cm, editor);
 
-        // ask plugin
-        if (plugin?.onCharTyped) {
-          const ctx = buildContext(editor, cursor, selection, 'char', getViewport(cursor, screen), { char: ch });
-          const result = plugin.onCharTyped(ctx);
-          if (result) applyEditResult(result, editor, cursor, selection);
-        }
+        cm.forEachBottomUp((c) => {
+          const prev = { x: c.x, y: c.y };
+          if (c.anchor) {
+            cm.deleteSelection(c, editor.lines);
+            editor.dirty = true;
+          }
+          c.x = ed.insertChar(editor, c.x, c.y, ch);
+          notifyPlugin(plugin, 'char', c, prev, editor, cm, screen, { char: ch });
+        });
 
-        undo.commit({ x: cursor.x, y: cursor.y }, editor.lines);
+        commit(undo, cm, editor);
       }
       break;
     }
   }
 
-  sel.clear(selection);
-  clamp(cursor, editor.lines);
+  cm.clampAll(editor.lines);
+  cm.dedup();
   return 'continue';
 }

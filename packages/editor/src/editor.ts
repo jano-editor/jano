@@ -4,7 +4,7 @@ export interface EditorState {
   lines: string[];
   filePath: string;
   dirty: boolean;
-  clipboardText: string;
+  clipboardParts: string[];
 }
 
 export function createEditor(filePath: string): EditorState {
@@ -20,7 +20,7 @@ export function createEditor(filePath: string): EditorState {
     lines,
     filePath,
     dirty: false,
-    clipboardText: '',
+    clipboardParts: [],
   };
 }
 

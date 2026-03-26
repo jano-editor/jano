@@ -1,13 +1,13 @@
 import type { EditResult } from './types.ts';
 import type { EditorState } from '../editor.ts';
-import type { CursorState } from '../cursor.ts';
-import type { SelectionState } from '../selection.ts';
+import type { CursorManager, SingleCursor } from '../cursor-manager.ts';
 
+// apply edit result, optionally targeting a specific cursor instead of primary
 export function applyEditResult(
   result: EditResult,
   editor: EditorState,
-  cursor: CursorState,
-  selection: SelectionState,
+  cm: CursorManager,
+  targetCursor?: SingleCursor,
 ) {
   if (result.replaceAll) {
     editor.lines = result.replaceAll;
@@ -15,7 +15,6 @@ export function applyEditResult(
   }
 
   if (result.edits) {
-    // apply edits in reverse order so positions stay valid
     const sorted = [...result.edits].sort((a, b) => {
       if (a.range.start.line !== b.range.start.line) {
         return b.range.start.line - a.range.start.line;
@@ -27,12 +26,10 @@ export function applyEditResult(
       const { start, end } = edit.range;
 
       if (start.line === end.line) {
-        // single line edit
         const line = editor.lines[start.line];
         editor.lines[start.line] =
           line.substring(0, start.col) + edit.text + line.substring(end.col);
       } else {
-        // multi-line edit
         const firstPart = editor.lines[start.line].substring(0, start.col);
         const lastPart = editor.lines[end.line].substring(end.col);
         const newLines = edit.text.split('\n');
@@ -45,16 +42,13 @@ export function applyEditResult(
     }
   }
 
-  // apply cursor positions
   if (result.cursors && result.cursors.length > 0) {
-    const primary = result.cursors[0];
-    cursor.x = primary.position.col;
-    cursor.y = primary.position.line;
-
-    if (primary.anchor) {
-      selection.anchor = { x: primary.anchor.col, y: primary.anchor.line };
-    } else {
-      selection.anchor = null;
-    }
+    const resultCursor = result.cursors[0];
+    const target = targetCursor ?? cm.primary;
+    target.x = resultCursor.position.col;
+    target.y = resultCursor.position.line;
+    target.anchor = resultCursor.anchor
+      ? { x: resultCursor.anchor.col, y: resultCursor.anchor.line }
+      : null;
   }
 }

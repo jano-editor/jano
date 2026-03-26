@@ -1,14 +1,69 @@
 import type { Pos } from './types.ts';
 
+export interface ExtraCursor {
+  x: number;
+  y: number;
+  anchor: Pos | null;
+}
+
 export interface CursorState {
+  // primary cursor
   x: number;
   y: number;
   scrollX: number;
   scrollY: number;
+  // additional cursors for multi-cursor mode
+  extra: ExtraCursor[];
 }
 
 export function createCursor(): CursorState {
-  return { x: 0, y: 0, scrollX: 0, scrollY: 0 };
+  return { x: 0, y: 0, scrollX: 0, scrollY: 0, extra: [] };
+}
+
+export function addCursor(state: CursorState, x: number, y: number) {
+  state.extra.push({ x, y, anchor: null });
+}
+
+export function clearExtraCursors(state: CursorState) {
+  state.extra = [];
+}
+
+export function hasMultipleCursors(state: CursorState): boolean {
+  return state.extra.length > 0;
+}
+
+export function getAllCursors(state: CursorState): { x: number; y: number }[] {
+  return [{ x: state.x, y: state.y }, ...state.extra];
+}
+
+// clamp a single extra cursor
+export function clampExtra(ec: ExtraCursor, lines: string[]) {
+  if (ec.y < 0) ec.y = 0;
+  if (ec.y >= lines.length) ec.y = lines.length - 1;
+  const lineLen = lines[ec.y].length;
+  if (ec.x < 0) ec.x = 0;
+  if (ec.x > lineLen) ec.x = lineLen;
+}
+
+// clamp all cursors
+export function clampAll(state: CursorState, lines: string[]) {
+  clamp(state, lines);
+  for (const ec of state.extra) clampExtra(ec, lines);
+}
+
+// remove duplicate cursors (same position)
+export function dedup(state: CursorState) {
+  state.extra = state.extra.filter(
+    ec => !(ec.x === state.x && ec.y === state.y)
+  );
+  const seen = new Set<string>();
+  seen.add(`${state.x},${state.y}`);
+  state.extra = state.extra.filter(ec => {
+    const key = `${ec.x},${ec.y}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function clamp(cursor: CursorState, lines: string[]) {

@@ -1,9 +1,7 @@
 import type { Screen, Draw, RGB } from '@jano/ui';
 import type { EditorState } from './editor.ts';
-import type { CursorState } from './cursor.ts';
-import type { SelectionState } from './selection.ts';
+import type { CursorManager } from './cursor-manager.ts';
 import type { LanguagePlugin } from './plugins/types.ts';
-import { getRange, isSelected } from './selection.ts';
 import { tokenizeLine } from './highlight.ts';
 import { tokenColors } from './plugins/types.ts';
 
@@ -16,6 +14,7 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
     ['^X', 'Cut'],
     ['^V', 'Paste'],
   ];
+  list.push(['^⇧↕', 'Multi']);
   if (plugin?.onFormat) {
     list.push(['F3', 'Format']);
   }
@@ -39,8 +38,7 @@ export function render(
   screen: Screen,
   draw: Draw,
   editor: EditorState,
-  cursor: CursorState,
-  sel: SelectionState,
+  cm: CursorManager,
   plugin: LanguagePlugin | null,
   pluginVersion?: string,
 ) {
@@ -49,7 +47,6 @@ export function render(
   const w = screen.width;
   const h = screen.height;
   const { gw, contentTop, viewH, viewW } = getViewDimensions(screen, editor.lines.length);
-  const selRange = getRange(sel, cursor);
 
   // outer border
   draw.rect(0, 0, w, h - 1, { fg: [80, 80, 80], border: 'round' });
@@ -68,7 +65,7 @@ export function render(
 
   // file content
   for (let y = 0; y < viewH; y++) {
-    const lineIdx = y + cursor.scrollY;
+    const lineIdx = y + cm.scrollY;
     if (lineIdx >= editor.lines.length) break;
 
     // line number
@@ -92,24 +89,29 @@ export function render(
 
     // draw characters
     for (let col = 0; col < viewW; col++) {
-      const charIdx = col + cursor.scrollX;
-      if (charIdx >= line.length) break;
-      const ch = line[charIdx];
+      const charIdx = col + cm.scrollX;
+      const screenX = 1 + gw + col;
+      const screenY = contentTop + y;
+      const ch = charIdx < line.length ? line[charIdx] : ' ';
 
-      if (isSelected(selRange, lineIdx, charIdx)) {
-        draw.char(1 + gw + col, contentTop + y, ch, { fg: [255, 255, 255], bg: [60, 100, 180] });
-      } else {
-        const fg = colorMap[charIdx] ?? [171, 178, 191]; // default text color
-        draw.char(1 + gw + col, contentTop + y, ch, { fg });
+      if (cm.isCellSelected(lineIdx, charIdx)) {
+        draw.char(screenX, screenY, ch, { fg: [255, 255, 255], bg: [60, 100, 180] });
+      } else if (cm.isCellExtraCursor(lineIdx, charIdx)) {
+        draw.char(screenX, screenY, ch, { fg: [0, 0, 0], bg: [200, 200, 200] });
+      } else if (charIdx < line.length) {
+        const fg = colorMap[charIdx] ?? [171, 178, 191];
+        draw.char(screenX, screenY, ch, { fg });
       }
     }
   }
 
   // status bar
+  const p = cm.primary;
   const statusY = h - 3;
   draw.line(1, statusY, w - 2, statusY, { fg: [80, 80, 80] });
   const modified = editor.dirty ? ' [modified]' : '';
-  const status = ` Ln ${cursor.y + 1}, Col ${cursor.x + 1}  ${editor.lines.length} lines${modified}`;
+  const multi = cm.isMulti ? ` (${cm.count} cursors)` : '';
+  const status = ` Ln ${p.y + 1}, Col ${p.x + 1}  ${editor.lines.length} lines${modified}${multi}`;
   draw.text(2, statusY, status, { fg: [200, 200, 200] });
 
   // shortcut help
@@ -125,9 +127,9 @@ export function render(
 
   draw.flush();
 
-  // position terminal cursor
-  const screenCursorX = 1 + gw + (cursor.x - cursor.scrollX);
-  const screenCursorY = contentTop + (cursor.y - cursor.scrollY);
+  // position terminal cursor on primary
+  const screenCursorX = 1 + gw + (p.x - cm.scrollX);
+  const screenCursorY = contentTop + (p.y - cm.scrollY);
   screen.moveTo(screenCursorX, screenCursorY);
   screen.showCursor();
 }

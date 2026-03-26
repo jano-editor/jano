@@ -1,23 +1,18 @@
 import { basename, extname } from 'node:path';
-import type { PluginContext, Cursor } from './types.ts';
+import type { PluginContext, Cursor, CursorAction, ActionType, Position } from './types.ts';
 import type { EditorState } from '../editor.ts';
-import type { CursorState } from '../cursor.ts';
-import type { SelectionState } from '../selection.ts';
+import type { CursorManager, SingleCursor } from '../cursor-manager.ts';
 
 export function buildContext(
   editor: EditorState,
-  cursorState: CursorState,
-  selection: SelectionState,
-  eventType: PluginContext['event']['type'],
+  cm: CursorManager,
   viewport: { firstLine: number; lastLine: number; width: number; height: number },
-  extra?: { char?: string; pastedText?: string; deletedText?: string },
+  action?: CursorAction,
 ): PluginContext {
-  const cursor: Cursor = {
-    position: { line: cursorState.y, col: cursorState.x },
-    anchor: selection.anchor
-      ? { line: selection.anchor.y, col: selection.anchor.x }
-      : null,
-  };
+  const allCursors: Cursor[] = cm.all.map(c => ({
+    position: { line: c.y, col: c.x },
+    anchor: c.anchor ? { line: c.anchor.y, col: c.anchor.x } : null,
+  }));
 
   return {
     filePath: editor.filePath,
@@ -25,13 +20,8 @@ export function buildContext(
     extension: extname(editor.filePath),
     lines: editor.lines,
     lineCount: editor.lines.length,
-    cursors: [cursor],
-    event: {
-      type: eventType,
-      char: extra?.char,
-      pastedText: extra?.pastedText,
-      deletedText: extra?.deletedText,
-    },
+    cursors: allCursors,
+    action,
     viewport: {
       firstVisibleLine: viewport.firstLine,
       lastVisibleLine: viewport.lastLine,
@@ -40,5 +30,23 @@ export function buildContext(
     },
     dirty: editor.dirty,
     language: '',
+  };
+}
+
+export function buildAction(
+  type: ActionType,
+  c: SingleCursor,
+  previousPosition: Position,
+  extra?: { char?: string; pastedText?: string },
+): CursorAction {
+  return {
+    type,
+    cursor: {
+      position: { line: c.y, col: c.x },
+      anchor: c.anchor ? { line: c.anchor.y, col: c.anchor.x } : null,
+    },
+    previousPosition,
+    char: extra?.char,
+    pastedText: extra?.pastedText,
   };
 }

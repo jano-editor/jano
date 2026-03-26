@@ -1,4 +1,5 @@
 import type { Pos } from './types.ts';
+import type { CursorSnapshot } from './cursor-manager.ts';
 
 interface LineDiff {
   index: number;
@@ -21,6 +22,8 @@ export interface UndoEntry {
   timestamp: number;
   cursorBefore: Pos;
   cursorAfter: Pos;
+  cursorStateBefore: CursorSnapshot | null;
+  cursorStateAfter: CursorSnapshot | null;
   diffs: LineDiff[];
   removed: LineRemove[];
   inserted: LineInsert[];
@@ -30,10 +33,10 @@ export interface UndoEntry {
 const GROUP_THRESHOLD = 800;
 
 export interface UndoManager {
-  snapshot(label: string, cursorBefore: Pos, linesBefore: string[]): void;
-  commit(cursorAfter: Pos, linesAfter: string[]): void;
-  undo(lines: string[], cursor: Pos): string[] | null;
-  redo(lines: string[], cursor: Pos): string[] | null;
+  snapshot(label: string, cursorBefore: Pos, linesBefore: string[], cursorState?: CursorSnapshot): void;
+  commit(cursorAfter: Pos, linesAfter: string[], cursorState?: CursorSnapshot): void;
+  undo(lines: string[], cursor: Pos): { lines: string[]; cursorState: CursorSnapshot | null } | null;
+  redo(lines: string[], cursor: Pos): { lines: string[]; cursorState: CursorSnapshot | null } | null;
   getHistory(): readonly UndoEntry[];
   describeEntry(entry: UndoEntry): string;
   jumpTo(index: number, lines: string[], cursor: Pos): string[];
@@ -50,6 +53,7 @@ export function createUndoManager(): UndoManager {
   let pendingLabel = '';
   let pendingCursorBefore: Pos = { x: 0, y: 0 };
   let pendingLinesBefore: string[] = [];
+  let pendingCursorState: CursorSnapshot | null = null;
   let hasPending = false;
 
   function buildEntry(
@@ -87,6 +91,8 @@ export function createUndoManager(): UndoManager {
       timestamp: Date.now(),
       cursorBefore,
       cursorAfter,
+      cursorStateBefore: null,
+      cursorStateAfter: null,
       diffs,
       removed,
       inserted,
@@ -162,14 +168,15 @@ export function createUndoManager(): UndoManager {
   }
 
   return {
-    snapshot(label: string, cursorBefore: Pos, linesBefore: string[]) {
+    snapshot(label: string, cursorBefore: Pos, linesBefore: string[], cursorState?: CursorSnapshot) {
       pendingLabel = label;
       pendingCursorBefore = { ...cursorBefore };
       pendingLinesBefore = [...linesBefore];
+      pendingCursorState = cursorState ?? null;
       hasPending = true;
     },
 
-    commit(cursorAfter: Pos, linesAfter: string[]) {
+    commit(cursorAfter: Pos, linesAfter: string[], cursorState?: CursorSnapshot) {
       if (!hasPending) return;
       hasPending = false;
 
@@ -194,6 +201,8 @@ export function createUndoManager(): UndoManager {
         );
         // fix: just update cursor, the merged entry replaces the last
         merged.cursorBefore = last.cursorBefore;
+        merged.cursorStateBefore = last.cursorStateBefore;
+        merged.cursorStateAfter = cursorState ?? null;
         undoStack[undoStack.length - 1] = merged;
       } else {
         const entry = buildEntry(
@@ -203,6 +212,8 @@ export function createUndoManager(): UndoManager {
           pendingLinesBefore,
           [...linesAfter],
         );
+        entry.cursorStateBefore = pendingCursorState;
+        entry.cursorStateAfter = cursorState ?? null;
         undoStack.push(entry);
       }
 
@@ -210,18 +221,24 @@ export function createUndoManager(): UndoManager {
       redoStack.length = 0;
     },
 
-    undo(lines: string[], cursor: Pos): string[] | null {
+    undo(lines: string[], cursor: Pos) {
       const entry = undoStack.pop();
       if (!entry) return null;
       redoStack.push(entry);
-      return applyUndo(entry, lines, cursor);
+      return {
+        lines: applyUndo(entry, lines, cursor),
+        cursorState: entry.cursorStateBefore,
+      };
     },
 
-    redo(lines: string[], cursor: Pos): string[] | null {
+    redo(lines: string[], cursor: Pos) {
       const entry = redoStack.pop();
       if (!entry) return null;
       undoStack.push(entry);
-      return applyRedo(entry, lines, cursor);
+      return {
+        lines: applyRedo(entry, lines, cursor),
+        cursorState: entry.cursorStateAfter,
+      };
     },
 
     getHistory(): readonly UndoEntry[] {

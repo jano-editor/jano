@@ -42,6 +42,22 @@ export interface Range {
   end: Position;
 }
 
+// ----- Cursor Action (fired per cursor, after the edit happened) -----
+
+export type ActionType = 'newline' | 'char' | 'delete' | 'backspace' | 'paste' | 'tab';
+
+export interface CursorAction {
+  type: ActionType;
+  // the cursor this action applies to
+  cursor: Cursor;
+  // where the cursor was before the action
+  previousPosition: Position;
+  // what was typed (for 'char')
+  char?: string;
+  // what was pasted (for 'paste')
+  pastedText?: string;
+}
+
 // ----- Plugin Context -----
 
 export interface PluginContext {
@@ -52,15 +68,13 @@ export interface PluginContext {
   lines: readonly string[];
   lineCount: number;
 
+  // all cursors in the editor
   cursors: readonly Cursor[];
 
-  event: {
-    type: 'newline' | 'char' | 'format' | 'save' | 'open' | 'delete' | 'paste';
-    char?: string;
-    pastedText?: string;
-    deletedText?: string;
-  };
+  // the action that just happened (per-cursor hook)
+  action?: CursorAction;
 
+  // viewport
   viewport: {
     firstVisibleLine: number;
     lastVisibleLine: number;
@@ -91,16 +105,22 @@ export interface LanguagePlugin {
   name: string;
   extensions: string[];
 
+  // syntax highlighting
   highlight?: {
     keywords?: string[];
     patterns?: HighlightPatterns;
   };
 
-  onNewLine?(context: PluginContext): EditResult | null;
-  onCharTyped?(context: PluginContext): EditResult | null;
+  // fired after each cursor action (newline, char typed, delete, etc.)
+  // called once per cursor — plugin can respond with edits for that cursor
+  onCursorAction?(context: PluginContext): EditResult | null;
+
+  // fired on explicit format request (F3) — whole document
   onFormat?(context: PluginContext): EditResult | null;
+
+  // fired on save
   onSave?(context: PluginContext): EditResult | null;
+
+  // fired when file is opened
   onOpen?(context: PluginContext): void;
-  onDelete?(context: PluginContext): EditResult | null;
-  onPaste?(context: PluginContext): EditResult | null;
 }

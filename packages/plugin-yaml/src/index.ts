@@ -79,8 +79,10 @@ const plugin: LanguagePlugin = {
     };
   },
 
-  onNewLine(ctx: PluginContext) {
-    const cursor = ctx.cursors[0];
+  onCursorAction(ctx: PluginContext) {
+    if (!ctx.action || ctx.action.type !== 'newline') return null;
+
+    const cursor = ctx.action.cursor;
     const curLine = cursor.position.line;
     const prevLine = curLine > 0 ? ctx.lines[curLine - 1] : '';
     const match = prevLine.match(/^(\s*)/);
