@@ -15,6 +15,7 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
     ["^V", "Paste"],
   ];
   list.push(["^F", "Search"]);
+  list.push(["^G", "Go to"]);
   list.push(["^⇧↕", "Multi"]);
   if (plugin?.onFormat) {
     list.push(["F3", "Format"]);

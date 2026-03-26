@@ -9,7 +9,7 @@ import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
 
-export type HandleKeyResult = "continue" | "exit" | "history" | "search";
+export type HandleKeyResult = "continue" | "exit" | "history" | "search" | "goto";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -165,6 +165,9 @@ export function handleKey(
 
       case "f":
         return "search";
+
+      case "g":
+        return "goto";
 
       case "left":
         cm.moveWordAll("left", editor.lines);

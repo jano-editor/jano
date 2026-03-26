@@ -223,6 +223,72 @@ async function openSearch() {
   update();
 }
 
+async function openGoto() {
+  dialogOpen = true;
+
+  const total = editor.lines.length;
+  const current = cm.primary.y + 1;
+
+  const result = await showDialog(
+    screen,
+    draw,
+    {
+      title: `Go to Line (1-${total})`,
+      message: `Current: line ${current}`,
+      input: true,
+      inputPlaceholder: "Line number, 'start' or 'end'...",
+      buttons: [
+        { label: "Start", value: "start" },
+        { label: "Go", value: "go" },
+        { label: "End", value: "end" },
+      ],
+      border: "round",
+      width: 45,
+    },
+    update,
+  );
+
+  dialogOpen = false;
+
+  const p = cm.primary;
+  cm.clearExtras();
+  p.anchor = null;
+
+  if (result.type === "button") {
+    if (result.value === "start") {
+      p.y = 0;
+      p.x = 0;
+    } else if (result.value === "end") {
+      p.y = editor.lines.length - 1;
+      p.x = 0;
+    } else if (result.value === "go") {
+      const inputVal = result.inputValue ?? "";
+      const line = parseInt(inputVal, 10);
+      if (line >= 1 && line <= editor.lines.length) {
+        p.y = line - 1;
+        p.x = 0;
+      }
+    }
+  } else if (result.type === "input") {
+    const val = result.value.trim().toLowerCase();
+    if (val === "start" || val === "s") {
+      p.y = 0;
+      p.x = 0;
+    } else if (val === "end" || val === "e") {
+      p.y = editor.lines.length - 1;
+      p.x = 0;
+    } else {
+      const line = parseInt(val, 10);
+      if (line >= 1 && line <= editor.lines.length) {
+        p.y = line - 1;
+        p.x = 0;
+      }
+    }
+  }
+
+  update();
+}
+
 // init
 async function start() {
   const paths = getPaths();
@@ -273,6 +339,9 @@ process.stdin.on("data", (data) => {
       return;
     case "search":
       void openSearch();
+      return;
+    case "goto":
+      void openGoto();
       return;
   }
 
