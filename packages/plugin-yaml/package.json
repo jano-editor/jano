@@ -1,5 +1,5 @@
 {
-  "name": "@jano/plugin-yaml",
+  "name": "@jano-editor/plugin-yaml",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,7 @@
     "install-plugin": "pnpm build && node scripts/install.js"
   },
   "devDependencies": {
-    "@jano/plugin-types": "workspace:*",
+    "@jano-editor/plugin-types": "workspace:*",
     "esbuild": "^0.24.0"
   }
 }

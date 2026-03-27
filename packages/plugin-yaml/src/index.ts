@@ -1,4 +1,4 @@
-import type { LanguagePlugin, PluginContext } from "@jano/plugin-types";
+import type { LanguagePlugin, PluginContext } from "@jano-editor/plugin-types";
 
 const TAB_SIZE = 2;
 
