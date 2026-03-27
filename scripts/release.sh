@@ -34,8 +34,8 @@ if [ "$VALID" = false ]; then
 fi
 
 # validate version format
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Error: version must be semver (e.g. 1.0.0)"
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+  echo "Error: version must be semver (e.g. 1.0.0 or 1.0.0-alpha.1)"
   exit 1
 fi
 
