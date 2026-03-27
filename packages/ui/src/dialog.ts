@@ -1,6 +1,6 @@
-import type { Screen } from './screen.ts';
-import type { Draw } from './draw.ts';
-import type { RGB } from './color.ts';
+import type { Screen } from "./screen.ts";
+import type { Draw } from "./draw.ts";
+import type { RGB } from "./color.ts";
 
 export interface DialogButton {
   label: string;
@@ -14,14 +14,14 @@ export interface DialogOptions {
   input?: boolean;
   inputPlaceholder?: string;
   inputValue?: string;
-  border?: 'single' | 'double' | 'round';
+  border?: "single" | "double" | "round";
   width?: number;
 }
 
 export type DialogResult =
-  | { type: 'button'; value: string; inputValue?: string }
-  | { type: 'input'; value: string }
-  | { type: 'cancel' };
+  | { type: "button"; value: string; inputValue?: string }
+  | { type: "input"; value: string }
+  | { type: "cancel" };
 
 const theme = {
   border: [120, 120, 120] as RGB,
@@ -46,7 +46,7 @@ export function showDialog(
     const buttons = opts.buttons ?? [];
     const hasInput = opts.input ?? false;
     let selectedButton = 0;
-    let inputText = opts.inputValue ?? '';
+    let inputText = opts.inputValue ?? "";
     let inputCursorX = inputText.length;
     // when both input and buttons: false = input focused, true = buttons focused
     let buttonsActive = !hasInput;
@@ -79,7 +79,7 @@ export function showDialog(
       // dialog box
       draw.rect(x, y, w, h, {
         fg: theme.border,
-        border: opts.border ?? 'round',
+        border: opts.border ?? "round",
         fill: theme.fill,
       });
 
@@ -103,7 +103,7 @@ export function showDialog(
         const inputW = w - 4;
         // input background
         for (let i = 0; i < inputW; i++) {
-          draw.char(x + 2 + i, row, ' ', { bg: theme.inputBg });
+          draw.char(x + 2 + i, row, " ", { bg: theme.inputBg });
         }
         // input text
         const visibleText = inputText.substring(0, inputW);
@@ -125,7 +125,7 @@ export function showDialog(
       if (buttons.length > 0) {
         row++;
         // each button: " Label " (label + 2 padding) + 2 gap between
-        const btnWidths = buttons.map(b => b.label.length + 2);
+        const btnWidths = buttons.map((b) => b.label.length + 2);
         const totalLen = btnWidths.reduce((a, b) => a + b, 0) + (buttons.length - 1) * 2;
         let btnX = x + Math.floor((w - totalLen) / 2);
 
@@ -156,7 +156,7 @@ export function showDialog(
       // escape = cancel
       if (data[0] === 0x1b && data.length === 1) {
         cleanup();
-        resolve({ type: 'cancel' });
+        resolve({ type: "cancel" });
         return;
       }
 
@@ -170,9 +170,9 @@ export function showDialog(
         }
         cleanup();
         if (hasInput && !buttonsActive && buttons.length === 0) {
-          resolve({ type: 'input', value: inputText });
+          resolve({ type: "input", value: inputText });
         } else if (buttons.length > 0) {
-          resolve({ type: 'button', value: buttons[selectedButton].value, inputValue: inputText });
+          resolve({ type: "button", value: buttons[selectedButton].value, inputValue: inputText });
         }
         return;
       }
@@ -186,21 +186,21 @@ export function showDialog(
 
       // escape sequences (arrows)
       if (data[0] === 0x1b && data[1] === 0x5b) {
-        const seq = data.toString('utf8', 2);
+        const seq = data.toString("utf8", 2);
         if (buttonsActive) {
-          if (seq === 'C' || seq === 'D') {
+          if (seq === "C" || seq === "D") {
             // left/right between buttons
-            if (seq === 'C') selectedButton = Math.min(selectedButton + 1, buttons.length - 1);
-            if (seq === 'D') selectedButton = Math.max(selectedButton - 1, 0);
+            if (seq === "C") selectedButton = Math.min(selectedButton + 1, buttons.length - 1);
+            if (seq === "D") selectedButton = Math.max(selectedButton - 1, 0);
             renderDialog();
           }
         } else if (hasInput) {
           // left/right in input
-          if (seq === 'C') inputCursorX = Math.min(inputCursorX + 1, inputText.length);
-          if (seq === 'D') inputCursorX = Math.max(inputCursorX - 1, 0);
+          if (seq === "C") inputCursorX = Math.min(inputCursorX + 1, inputText.length);
+          if (seq === "D") inputCursorX = Math.max(inputCursorX - 1, 0);
           // home/end
-          if (seq === 'H') inputCursorX = 0;
-          if (seq === 'F') inputCursorX = inputText.length;
+          if (seq === "H") inputCursorX = 0;
+          if (seq === "F") inputCursorX = inputText.length;
           renderDialog();
         }
         return;
@@ -218,7 +218,7 @@ export function showDialog(
 
       // regular typing in input
       if (hasInput && !buttonsActive) {
-        const ch = data.toString('utf8');
+        const ch = data.toString("utf8");
         const code = ch.codePointAt(0) ?? 0;
         if (code >= 32) {
           inputText = inputText.substring(0, inputCursorX) + ch + inputText.substring(inputCursorX);
@@ -229,11 +229,11 @@ export function showDialog(
     }
 
     function cleanup() {
-      process.stdin.removeListener('data', onData);
+      process.stdin.removeListener("data", onData);
     }
 
     // take over input
-    process.stdin.on('data', onData);
+    process.stdin.on("data", onData);
 
     renderDialog();
   });
@@ -241,13 +241,13 @@ export function showDialog(
 
 function wrapText(text: string, maxWidth: number): string[] {
   const result: string[] = [];
-  for (const line of text.split('\n')) {
+  for (const line of text.split("\n")) {
     if (line.length <= maxWidth) {
       result.push(line);
     } else {
       let remaining = line;
       while (remaining.length > maxWidth) {
-        let breakAt = remaining.lastIndexOf(' ', maxWidth);
+        let breakAt = remaining.lastIndexOf(" ", maxWidth);
         if (breakAt <= 0) breakAt = maxWidth;
         result.push(remaining.substring(0, breakAt));
         remaining = remaining.substring(breakAt).trimStart();

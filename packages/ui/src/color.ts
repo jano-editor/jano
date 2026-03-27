@@ -1,4 +1,4 @@
-const ESC = '\x1b';
+const ESC = "\x1b";
 
 export type RGB = [number, number, number];
 

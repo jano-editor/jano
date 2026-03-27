@@ -1,17 +1,22 @@
-import { fg, bg, reset } from './color.ts';
-import type { Screen } from './screen.ts';
-import type { RGB } from './color.ts';
+import { fg, bg, reset } from "./color.ts";
+import type { Screen } from "./screen.ts";
+import type { RGB } from "./color.ts";
 
-type BorderStyle = 'single' | 'double' | 'round';
+type BorderStyle = "single" | "double" | "round";
 
 interface BorderChars {
-  tl: string; tr: string; bl: string; br: string; h: string; v: string;
+  tl: string;
+  tr: string;
+  bl: string;
+  br: string;
+  h: string;
+  v: string;
 }
 
 const borders: Record<BorderStyle, BorderChars> = {
-  single: { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│' },
-  double: { tl: '╔', tr: '╗', bl: '╚', br: '╝', h: '═', v: '║' },
-  round:  { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' },
+  single: { tl: "┌", tr: "┐", bl: "└", br: "┘", h: "─", v: "│" },
+  double: { tl: "╔", tr: "╗", bl: "╚", br: "╝", h: "═", v: "║" },
+  round: { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" },
 };
 
 interface StyleOpts {
@@ -57,19 +62,19 @@ export function createDraw(screen: Screen): Draw {
       for (let y = 0; y < h; y++) {
         buffer[y] = [];
         for (let x = 0; x < w; x++) {
-          buffer[y][x] = { char: ' ', style: '' };
+          buffer[y][x] = { char: " ", style: "" };
         }
       }
     }
   }
 
-  function set(x: number, y: number, char: string, style = '') {
+  function set(x: number, y: number, char: string, style = "") {
     if (x < 0 || y < 0 || x >= bufW || y >= bufH) return;
     buffer[y][x] = { char, style };
   }
 
   function buildStyle(opts: StyleOpts): string {
-    let s = '';
+    let s = "";
     if (opts.fg) s += fg(opts.fg[0], opts.fg[1], opts.fg[2]);
     if (opts.bg) s += bg(opts.bg[0], opts.bg[1], opts.bg[2]);
     return s;
@@ -80,7 +85,7 @@ export function createDraw(screen: Screen): Draw {
       ensureBuffer();
       for (let y = 0; y < bufH; y++) {
         for (let x = 0; x < bufW; x++) {
-          buffer[y][x] = { char: ' ', style: '' };
+          buffer[y][x] = { char: " ", style: "" };
         }
       }
     },
@@ -101,7 +106,7 @@ export function createDraw(screen: Screen): Draw {
     line(x1: number, y1: number, x2: number, y2: number, opts: LineOpts = {}) {
       ensureBuffer();
       const style = buildStyle(opts);
-      const char = opts.char || (y1 === y2 ? '─' : '│');
+      const char = opts.char || (y1 === y2 ? "─" : "│");
 
       if (y1 === y2) {
         const start = Math.min(x1, x2);
@@ -121,7 +126,7 @@ export function createDraw(screen: Screen): Draw {
     rect(x: number, y: number, w: number, h: number, opts: RectOpts = {}) {
       ensureBuffer();
       const style = buildStyle(opts);
-      const b = borders[opts.border || 'single'];
+      const b = borders[opts.border || "single"];
 
       // corners
       set(x, y, b.tl, style);
@@ -146,7 +151,7 @@ export function createDraw(screen: Screen): Draw {
         const fillStyle = buildStyle({ bg: opts.fill });
         for (let iy = 1; iy < h - 1; iy++) {
           for (let ix = 1; ix < w - 1; ix++) {
-            set(x + ix, y + iy, ' ', fillStyle);
+            set(x + ix, y + iy, " ", fillStyle);
           }
         }
       }
@@ -154,10 +159,10 @@ export function createDraw(screen: Screen): Draw {
 
     flush() {
       ensureBuffer();
-      let out = '';
+      let out = "";
       for (let y = 0; y < bufH; y++) {
         out += `\x1b[${y + 1};1H`;
-        let lastStyle = '';
+        let lastStyle = "";
         for (let x = 0; x < bufW; x++) {
           const cell = buffer[y][x];
           if (cell.style !== lastStyle) {

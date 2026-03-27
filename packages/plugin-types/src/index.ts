@@ -44,7 +44,7 @@ export interface Range {
 
 // ----- Cursor Action (fired per cursor, after the edit happened) -----
 
-export type ActionType = 'newline' | 'char' | 'delete' | 'backspace' | 'paste' | 'tab';
+export type ActionType = "newline" | "char" | "delete" | "backspace" | "paste" | "tab";
 
 export interface CursorAction {
   type: ActionType;

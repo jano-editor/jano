@@ -1,6 +1,6 @@
-import { WriteStream } from 'node:tty';
+import { WriteStream } from "node:tty";
 
-const ESC = '\x1b';
+const ESC = "\x1b";
 
 export interface Screen {
   readonly width: number;
@@ -18,17 +18,21 @@ export function createScreen(stream: WriteStream = process.stdout as WriteStream
   const write = (data: string) => stream.write(data);
 
   return {
-    get width() { return stream.columns; },
-    get height() { return stream.rows; },
+    get width() {
+      return stream.columns;
+    },
+    get height() {
+      return stream.rows;
+    },
 
     enter() {
-      write(`${ESC}[?1049h`);  // alternate buffer
-      write(`${ESC}[?25l`);    // hide cursor
+      write(`${ESC}[?1049h`); // alternate buffer
+      write(`${ESC}[?25l`); // hide cursor
     },
 
     leave() {
-      write(`${ESC}[?25h`);    // show cursor
-      write(`${ESC}[?1049l`);  // restore buffer
+      write(`${ESC}[?25h`); // show cursor
+      write(`${ESC}[?1049l`); // restore buffer
     },
 
     clear() {
@@ -39,9 +43,15 @@ export function createScreen(stream: WriteStream = process.stdout as WriteStream
       write(`${ESC}[${y + 1};${x + 1}H`);
     },
 
-    showCursor() { write(`${ESC}[?25h`); },
-    hideCursor() { write(`${ESC}[?25l`); },
+    showCursor() {
+      write(`${ESC}[?25h`);
+    },
+    hideCursor() {
+      write(`${ESC}[?25l`);
+    },
 
-    write(data: string) { write(data); },
+    write(data: string) {
+      write(data);
+    },
   };
 }

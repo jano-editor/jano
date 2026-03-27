@@ -1,4 +1,4 @@
-import type { Pos, SelectionRange } from './types.ts';
+import type { Pos, SelectionRange } from "./types.ts";
 
 export interface SingleCursor {
   x: number;
@@ -58,13 +58,17 @@ export interface CursorManager {
   forEachAll(fn: (c: SingleCursor, isPrimary: boolean) => void): void;
 
   // move all cursors
-  moveAll(direction: 'up' | 'down' | 'left' | 'right' | 'home' | 'end' | 'pageup' | 'pagedown', lines: string[], pageSize: number): void;
+  moveAll(
+    direction: "up" | "down" | "left" | "right" | "home" | "end" | "pageup" | "pagedown",
+    lines: string[],
+    pageSize: number,
+  ): void;
 
   // move all cursors by word
-  moveWordAll(direction: 'left' | 'right', lines: string[]): void;
+  moveWordAll(direction: "left" | "right", lines: string[]): void;
 
   // merge all cursors into one selection (for shift+up/down with multi)
-  mergeIntoSelection(direction: 'up' | 'down'): void;
+  mergeIntoSelection(direction: "up" | "down"): void;
 
   // clamp all cursors to valid positions
   clampAll(lines: string[]): void;
@@ -133,12 +137,18 @@ function clampCursor(c: SingleCursor, lines: string[]) {
 
 function moveLeftOne(c: SingleCursor, lines: string[]) {
   if (c.x > 0) c.x--;
-  else if (c.y > 0) { c.y--; c.x = lines[c.y].length; }
+  else if (c.y > 0) {
+    c.y--;
+    c.x = lines[c.y].length;
+  }
 }
 
 function moveRightOne(c: SingleCursor, lines: string[]) {
   if (c.x < lines[c.y].length) c.x++;
-  else if (c.y < lines.length - 1) { c.y++; c.x = 0; }
+  else if (c.y < lines.length - 1) {
+    c.y++;
+    c.x = 0;
+  }
 }
 
 export function createCursorManager(): CursorManager {
@@ -147,19 +157,35 @@ export function createCursorManager(): CursorManager {
   let scrollY = 0;
 
   const mgr: CursorManager = {
-    get primary() { return cursors[0]; },
-    get all() { return cursors; },
-    get count() { return cursors.length; },
-    get isMulti() { return cursors.length > 1; },
+    get primary() {
+      return cursors[0];
+    },
+    get all() {
+      return cursors;
+    },
+    get count() {
+      return cursors.length;
+    },
+    get isMulti() {
+      return cursors.length > 1;
+    },
 
-    get scrollX() { return scrollX; },
-    set scrollX(v) { scrollX = v; },
-    get scrollY() { return scrollY; },
-    set scrollY(v) { scrollY = v; },
+    get scrollX() {
+      return scrollX;
+    },
+    set scrollX(v) {
+      scrollX = v;
+    },
+    get scrollY() {
+      return scrollY;
+    },
+    set scrollY(v) {
+      scrollY = v;
+    },
 
     saveState(): CursorSnapshot {
       return {
-        cursors: cursors.map(c => ({
+        cursors: cursors.map((c) => ({
           x: c.x,
           y: c.y,
           anchor: c.anchor ? { ...c.anchor } : null,
@@ -183,7 +209,7 @@ export function createCursorManager(): CursorManager {
     },
 
     addBelow() {
-      const allY = cursors.map(c => c.y);
+      const allY = cursors.map((c) => c.y);
       const lowestY = Math.max(...allY);
       const newY = lowestY + 1;
       const newX = cursors[0].x;
@@ -200,7 +226,7 @@ export function createCursorManager(): CursorManager {
 
     getSelectedText(c, lines) {
       const range = getSelRange(c);
-      if (!range) return '';
+      if (!range) return "";
       if (range.start.y === range.end.y) {
         return lines[range.start.y].substring(range.start.x, range.end.x);
       }
@@ -208,15 +234,15 @@ export function createCursorManager(): CursorManager {
       parts.push(lines[range.start.y].substring(range.start.x));
       for (let y = range.start.y + 1; y < range.end.y; y++) parts.push(lines[y]);
       parts.push(lines[range.end.y].substring(0, range.end.x));
-      return parts.join('\n');
+      return parts.join("\n");
     },
 
     isCellSelected(lineIdx, colIdx) {
-      return cursors.some(c => isInRange(getSelRange(c), lineIdx, colIdx));
+      return cursors.some((c) => isInRange(getSelRange(c), lineIdx, colIdx));
     },
 
     isCellExtraCursor(lineIdx, colIdx) {
-      return cursors.slice(1).some(c => c.y === lineIdx && c.x === colIdx);
+      return cursors.slice(1).some((c) => c.y === lineIdx && c.x === colIdx);
     },
 
     startSelectionAll() {
@@ -252,26 +278,48 @@ export function createCursorManager(): CursorManager {
     moveAll(direction, lines, pageSize) {
       for (const c of cursors) {
         switch (direction) {
-          case 'up': c.y--; break;
-          case 'down': c.y++; break;
-          case 'left': moveLeftOne(c, lines); break;
-          case 'right': moveRightOne(c, lines); break;
-          case 'home': c.x = 0; break;
-          case 'end': c.x = lines[c.y]?.length ?? 0; break;
-          case 'pageup': c.y -= pageSize; break;
-          case 'pagedown': c.y += pageSize; break;
+          case "up":
+            c.y--;
+            break;
+          case "down":
+            c.y++;
+            break;
+          case "left":
+            moveLeftOne(c, lines);
+            break;
+          case "right":
+            moveRightOne(c, lines);
+            break;
+          case "home":
+            c.x = 0;
+            break;
+          case "end":
+            c.x = lines[c.y]?.length ?? 0;
+            break;
+          case "pageup":
+            c.y -= pageSize;
+            break;
+          case "pagedown":
+            c.y += pageSize;
+            break;
         }
       }
     },
 
     moveWordAll(direction, lines) {
       for (const c of cursors) {
-        if (direction === 'left') {
+        if (direction === "left") {
           if (c.x > 0) c.x = wordBoundaryLeft(lines[c.y], c.x);
-          else if (c.y > 0) { c.y--; c.x = lines[c.y].length; }
+          else if (c.y > 0) {
+            c.y--;
+            c.x = lines[c.y].length;
+          }
         } else {
           if (c.x < lines[c.y].length) c.x = wordBoundaryRight(lines[c.y], c.x);
-          else if (c.y < lines.length - 1) { c.y++; c.x = 0; }
+          else if (c.y < lines.length - 1) {
+            c.y++;
+            c.x = 0;
+          }
         }
       }
     },
@@ -285,14 +333,15 @@ export function createCursorManager(): CursorManager {
         if (c.anchor) all.push(c.anchor);
       }
 
-      let min = all[0], max = all[0];
+      let min = all[0],
+        max = all[0];
       for (const p of all) {
         if (p.y < min.y || (p.y === min.y && p.x < min.x)) min = p;
         if (p.y > max.y || (p.y === max.y && p.x > max.x)) max = p;
       }
 
       cursors.splice(1);
-      if (direction === 'down') {
+      if (direction === "down") {
         cursors[0].anchor = { ...min };
         cursors[0].x = max.x;
         cursors[0].y = max.y;

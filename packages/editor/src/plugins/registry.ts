@@ -1,5 +1,5 @@
 // TODO: connect to actual plugin registry server
-const REGISTRY_URL = 'https://plugins.jano.dev';
+const REGISTRY_URL = "https://plugins.jano.dev";
 
 export interface RegistryPlugin {
   name: string;
@@ -25,7 +25,9 @@ export async function installPlugin(_name: string): Promise<{ success: boolean; 
   return { success: false, error: `Plugin registry not available yet (${REGISTRY_URL})` };
 }
 
-export async function checkUpdates(_installedPlugins: { name: string; version: string }[]): Promise<UpdateInfo[]> {
+export async function checkUpdates(
+  _installedPlugins: { name: string; version: string }[],
+): Promise<UpdateInfo[]> {
   // TODO: implement when registry server is available
   // 1. POST to REGISTRY_URL/updates with list of installed plugins
   // 2. return list of available updates

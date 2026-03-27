@@ -1,4 +1,4 @@
-import type { Pos } from './types.ts';
+import type { Pos } from "./types.ts";
 
 export interface ExtraCursor {
   x: number;
@@ -53,12 +53,10 @@ export function clampAll(state: CursorState, lines: string[]) {
 
 // remove duplicate cursors (same position)
 export function dedup(state: CursorState) {
-  state.extra = state.extra.filter(
-    ec => !(ec.x === state.x && ec.y === state.y)
-  );
+  state.extra = state.extra.filter((ec) => !(ec.x === state.x && ec.y === state.y));
   const seen = new Set<string>();
   seen.add(`${state.x},${state.y}`);
-  state.extra = state.extra.filter(ec => {
+  state.extra = state.extra.filter((ec) => {
     const key = `${ec.x},${ec.y}`;
     if (seen.has(key)) return false;
     seen.add(key);

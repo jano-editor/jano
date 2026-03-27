@@ -10,7 +10,8 @@
     "fmt": "vp fmt",
     "test": "vp test",
     "test:coverage": "vp test --coverage.enabled --coverage.provider=v8",
-    "build": "vp build"
+    "build": "vp build",
+    "precommit": "vp check --fix && vp test --run && vp build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

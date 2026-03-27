@@ -1,6 +1,6 @@
-import type { Pos, SelectionRange } from './types.ts';
-import type { CursorState } from './cursor.ts';
-import type { EditorState } from './editor.ts';
+import type { Pos, SelectionRange } from "./types.ts";
+import type { CursorState } from "./cursor.ts";
+import type { EditorState } from "./editor.ts";
 
 export interface SelectionState {
   anchor: Pos | null;
@@ -30,10 +30,15 @@ export function getText(range: SelectionRange, lines: string[]): string {
     parts.push(lines[y]);
   }
   parts.push(lines[range.end.y].substring(0, range.end.x));
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
-export function deleteRange(range: SelectionRange, editor: EditorState, cursor: CursorState, sel: SelectionState) {
+export function deleteRange(
+  range: SelectionRange,
+  editor: EditorState,
+  cursor: CursorState,
+  sel: SelectionState,
+) {
   if (range.start.y === range.end.y) {
     const line = editor.lines[range.start.y];
     editor.lines[range.start.y] = line.substring(0, range.start.x) + line.substring(range.end.x);

@@ -1,5 +1,5 @@
-import type { Pos } from './types.ts';
-import type { CursorSnapshot } from './cursor-manager.ts';
+import type { Pos } from "./types.ts";
+import type { CursorSnapshot } from "./cursor-manager.ts";
 
 interface LineDiff {
   index: number;
@@ -33,24 +33,35 @@ export interface UndoEntry {
 const GROUP_THRESHOLD = 800;
 
 export interface UndoManager {
-  snapshot(label: string, cursorBefore: Pos, linesBefore: string[], cursorState?: CursorSnapshot): void;
+  snapshot(
+    label: string,
+    cursorBefore: Pos,
+    linesBefore: string[],
+    cursorState?: CursorSnapshot,
+  ): void;
   commit(cursorAfter: Pos, linesAfter: string[], cursorState?: CursorSnapshot): void;
-  undo(lines: string[], cursor: Pos): { lines: string[]; cursorState: CursorSnapshot | null } | null;
-  redo(lines: string[], cursor: Pos): { lines: string[]; cursorState: CursorSnapshot | null } | null;
+  undo(
+    lines: string[],
+    cursor: Pos,
+  ): { lines: string[]; cursorState: CursorSnapshot | null } | null;
+  redo(
+    lines: string[],
+    cursor: Pos,
+  ): { lines: string[]; cursorState: CursorSnapshot | null } | null;
   getHistory(): readonly UndoEntry[];
   describeEntry(entry: UndoEntry): string;
   jumpTo(index: number, lines: string[], cursor: Pos): string[];
 }
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.substring(0, max - 1) + '…' : s;
+  return s.length > max ? s.substring(0, max - 1) + "…" : s;
 }
 
 export function createUndoManager(): UndoManager {
   const undoStack: UndoEntry[] = [];
   const redoStack: UndoEntry[] = [];
 
-  let pendingLabel = '';
+  let pendingLabel = "";
   let pendingCursorBefore: Pos = { x: 0, y: 0 };
   let pendingLinesBefore: string[] = [];
   let pendingCursorState: CursorSnapshot | null = null;
@@ -163,12 +174,17 @@ export function createUndoManager(): UndoManager {
     if (last.label !== label) return false;
     if (Date.now() - last.timestamp > GROUP_THRESHOLD) return false;
     // only group single-char typing
-    if (label !== 'type') return false;
+    if (label !== "type") return false;
     return true;
   }
 
   return {
-    snapshot(label: string, cursorBefore: Pos, linesBefore: string[], cursorState?: CursorSnapshot) {
+    snapshot(
+      label: string,
+      cursorBefore: Pos,
+      linesBefore: string[],
+      cursorState?: CursorSnapshot,
+    ) {
       pendingLabel = label;
       pendingCursorBefore = { ...cursorBefore };
       pendingLinesBefore = [...linesBefore];
@@ -251,20 +267,22 @@ export function createUndoManager(): UndoManager {
       // show what text was added or removed
       if (entry.diffs.length > 0) {
         const diff = entry.diffs[0];
-        const added = diff.new.length > diff.old.length
-          ? diff.new.substring(diff.old.length === 0 ? 0 : diff.old.length)
-          : '';
-        const removed = diff.old.length > diff.new.length
-          ? diff.old.substring(diff.new.length === 0 ? 0 : diff.new.length)
-          : '';
+        const added =
+          diff.new.length > diff.old.length
+            ? diff.new.substring(diff.old.length === 0 ? 0 : diff.old.length)
+            : "";
+        const removed =
+          diff.old.length > diff.new.length
+            ? diff.old.substring(diff.new.length === 0 ? 0 : diff.new.length)
+            : "";
 
-        if (entry.label === 'type' && added) {
+        if (entry.label === "type" && added) {
           return `Ln ${line}: +"${truncate(added, 25)}"`;
         }
-        if (entry.label === 'backspace' && removed) {
+        if (entry.label === "backspace" && removed) {
           return `Ln ${line}: -"${truncate(removed, 25)}"`;
         }
-        if (entry.label === 'delete' && removed) {
+        if (entry.label === "delete" && removed) {
           return `Ln ${line}: -"${truncate(removed, 25)}"`;
         }
         if (added && removed) {
@@ -276,18 +294,18 @@ export function createUndoManager(): UndoManager {
 
       if (entry.inserted.length > 0) {
         const text = entry.inserted[0].content;
-        return `Ln ${line}: +line "${truncate(text || '(empty)', 20)}"`;
+        return `Ln ${line}: +line "${truncate(text || "(empty)", 20)}"`;
       }
 
       if (entry.removed.length > 0) {
         const text = entry.removed[0].content;
-        return `Ln ${line}: -line "${truncate(text || '(empty)', 20)}"`;
+        return `Ln ${line}: -line "${truncate(text || "(empty)", 20)}"`;
       }
 
-      if (entry.label === 'enter') return `Ln ${line}: new line`;
-      if (entry.label === 'tab') return `Ln ${line}: indent`;
-      if (entry.label === 'cut') return `Ln ${line}: cut`;
-      if (entry.label === 'paste') return `Ln ${line}: paste`;
+      if (entry.label === "enter") return `Ln ${line}: new line`;
+      if (entry.label === "tab") return `Ln ${line}: indent`;
+      if (entry.label === "cut") return `Ln ${line}: cut`;
+      if (entry.label === "paste") return `Ln ${line}: paste`;
 
       return `Ln ${line}: ${entry.label}`;
     },
