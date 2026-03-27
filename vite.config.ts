@@ -1,6 +1,12 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  test: {
+    include: ["packages/**/src/__tests__/*.test.ts"],
+    coverage: {
+      reporter: ["text", "html"],
+    },
+  },
   build: {
     lib: {
       entry: "packages/editor/src/index.ts",

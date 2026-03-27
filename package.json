@@ -9,13 +9,16 @@
     "lint": "vp lint",
     "fmt": "vp fmt",
     "test": "vp test",
+    "test:coverage": "vp test --coverage.enabled --coverage.provider=v8",
     "build": "vp build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "packageManager": "pnpm@10.33.0"
 }
