@@ -7,21 +7,21 @@ export interface KeyEvent {
 }
 
 export function parseKey(data: Buffer): KeyEvent {
-  const key: KeyEvent = { name: '', ctrl: false, shift: false, alt: false, raw: data };
+  const key: KeyEvent = { name: "", ctrl: false, shift: false, alt: false, raw: data };
 
   // enter (13) and tab (9) must be checked before ctrl
   if (data.length === 1 && data[0] === 13) {
-    key.name = 'enter';
+    key.name = "enter";
     return key;
   }
   if (data.length === 1 && data[0] === 9) {
-    key.name = 'tab';
+    key.name = "tab";
     return key;
   }
 
   // ctrl+backspace (0x08)
   if (data.length === 1 && data[0] === 0x08) {
-    key.name = 'backspace';
+    key.name = "backspace";
     key.ctrl = true;
     return key;
   }
@@ -43,56 +43,161 @@ export function parseKey(data: Buffer): KeyEvent {
   // function keys (ESC O ...)
   if (data[0] === 0x1b && data[1] === 0x4f) {
     switch (data[2]) {
-      case 0x50: key.name = 'f1'; break;
-      case 0x51: key.name = 'f2'; break;
-      case 0x52: key.name = 'f3'; break;
-      case 0x53: key.name = 'f4'; break;
-      default: key.name = 'unknown'; break;
+      case 0x50:
+        key.name = "f1";
+        break;
+      case 0x51:
+        key.name = "f2";
+        break;
+      case 0x52:
+        key.name = "f3";
+        break;
+      case 0x53:
+        key.name = "f4";
+        break;
+      default:
+        key.name = "unknown";
+        break;
     }
     return key;
   }
 
   // escape sequences
   if (data[0] === 0x1b && data[1] === 0x5b) {
-    switch (data.toString('utf8', 2)) {
-      case 'A': key.name = 'up'; break;
-      case 'B': key.name = 'down'; break;
-      case 'C': key.name = 'right'; break;
-      case 'D': key.name = 'left'; break;
-      case 'H': key.name = 'home'; break;
-      case 'F': key.name = 'end'; break;
-      case '5~': key.name = 'pageup'; break;
-      case '6~': key.name = 'pagedown'; break;
-      case '3~': key.name = 'delete'; break;
-      case '3;5~': key.name = 'delete'; key.ctrl = true; break;
-      case '1;2A': key.name = 'up'; key.shift = true; break;
-      case '1;2B': key.name = 'down'; key.shift = true; break;
-      case '1;2C': key.name = 'right'; key.shift = true; break;
-      case '1;2D': key.name = 'left'; key.shift = true; break;
-      case '1;2H': key.name = 'home'; key.shift = true; break;
-      case '1;2F': key.name = 'end'; key.shift = true; break;
-      case '1;3A': key.name = 'up'; key.alt = true; break;
-      case '1;3B': key.name = 'down'; key.alt = true; break;
-      case '1;5A': key.name = 'up'; key.ctrl = true; break;
-      case '1;5B': key.name = 'down'; key.ctrl = true; break;
-      case '1;5C': key.name = 'right'; key.ctrl = true; break;
-      case '1;5D': key.name = 'left'; key.ctrl = true; break;
-      case '1;6A': key.name = 'up'; key.ctrl = true; key.shift = true; break;
-      case '1;6B': key.name = 'down'; key.ctrl = true; key.shift = true; break;
-      case '1;6C': key.name = 'right'; key.ctrl = true; key.shift = true; break;
-      case '1;6D': key.name = 'left'; key.ctrl = true; key.shift = true; break;
-      default: key.name = 'unknown'; break;
+    switch (data.toString("utf8", 2)) {
+      case "A":
+        key.name = "up";
+        break;
+      case "B":
+        key.name = "down";
+        break;
+      case "C":
+        key.name = "right";
+        break;
+      case "D":
+        key.name = "left";
+        break;
+      case "H":
+        key.name = "home";
+        break;
+      case "F":
+        key.name = "end";
+        break;
+      case "5~":
+        key.name = "pageup";
+        break;
+      case "6~":
+        key.name = "pagedown";
+        break;
+      case "3~":
+        key.name = "delete";
+        break;
+      case "3;5~":
+        key.name = "delete";
+        key.ctrl = true;
+        break;
+      case "1;2A":
+        key.name = "up";
+        key.shift = true;
+        break;
+      case "1;2B":
+        key.name = "down";
+        key.shift = true;
+        break;
+      case "1;2C":
+        key.name = "right";
+        key.shift = true;
+        break;
+      case "1;2D":
+        key.name = "left";
+        key.shift = true;
+        break;
+      case "1;2H":
+        key.name = "home";
+        key.shift = true;
+        break;
+      case "1;2F":
+        key.name = "end";
+        key.shift = true;
+        break;
+      case "1;3A":
+        key.name = "up";
+        key.alt = true;
+        break;
+      case "1;3B":
+        key.name = "down";
+        key.alt = true;
+        break;
+      case "1;5A":
+        key.name = "up";
+        key.ctrl = true;
+        break;
+      case "1;5B":
+        key.name = "down";
+        key.ctrl = true;
+        break;
+      case "1;5C":
+        key.name = "right";
+        key.ctrl = true;
+        break;
+      case "1;5D":
+        key.name = "left";
+        key.ctrl = true;
+        break;
+      case "1;6A":
+        key.name = "up";
+        key.ctrl = true;
+        key.shift = true;
+        break;
+      case "1;6B":
+        key.name = "down";
+        key.ctrl = true;
+        key.shift = true;
+        break;
+      case "1;6C":
+        key.name = "right";
+        key.ctrl = true;
+        key.shift = true;
+        break;
+      case "1;6D":
+        key.name = "left";
+        key.ctrl = true;
+        key.shift = true;
+        break;
+      case "1;7A":
+        key.name = "up";
+        key.ctrl = true;
+        key.alt = true;
+        break;
+      case "1;7B":
+        key.name = "down";
+        key.ctrl = true;
+        key.alt = true;
+        break;
+      case "1;7C":
+        key.name = "right";
+        key.ctrl = true;
+        key.alt = true;
+        break;
+      case "1;7D":
+        key.name = "left";
+        key.ctrl = true;
+        key.alt = true;
+        break;
+      default:
+        key.name = "unknown";
+        break;
     }
     return key;
   }
 
   // backspace
   if (data[0] === 127) {
-    key.name = 'backspace';
+    key.name = "backspace";
     return key;
   }
 
   // regular character
-  key.name = data.toString('utf8');
+  key.name = data.toString("utf8");
   return key;
 }

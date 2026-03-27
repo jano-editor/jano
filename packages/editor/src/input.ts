@@ -53,8 +53,11 @@ export function handleKey(
   undo: UndoManager,
   plugin: LanguagePlugin | null,
 ): HandleKeyResult {
-  // --- multi-cursor: ctrl+shift+up/down ---
-  if (key.shift && key.ctrl && (key.name === "up" || key.name === "down")) {
+  // --- multi-cursor: ctrl+shift+up/down (Linux/macOS) or ctrl+alt+up/down (Windows/WSL) ---
+  const isWindows = process.platform === "win32" || !!process.env["WSL_DISTRO_NAME"];
+  const isMultiCursorCombo =
+    (key.name === "up" || key.name === "down") && key.ctrl && (isWindows ? key.alt : key.shift);
+  if (isMultiCursorCombo) {
     const allCursors = cm.all;
     if (key.name === "up") {
       const topmost = Math.min(...allCursors.map((c) => c.y));
