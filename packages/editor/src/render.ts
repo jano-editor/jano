@@ -16,7 +16,8 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   ];
   list.push(["^F", "Search"]);
   list.push(["^G", "Go to"]);
-  list.push(["^⇧↕", "Multi"]);
+  const isWindows = process.platform === "win32" || !!process.env["WSL_DISTRO_NAME"];
+  list.push([isWindows ? "^⌥↕" : "^⇧↕", "Multi"]);
   if (plugin?.onFormat) {
     list.push(["F3", "Format"]);
   }
