@@ -15,7 +15,7 @@ export default defineConfig({
       fileName: "jano",
     },
     rollupOptions: {
-      external: [/^node:/, "adm-zip"],
+      external: [/^node:/, "adm-zip", "clipboardy"],
     },
     target: "node22",
     ssr: true,

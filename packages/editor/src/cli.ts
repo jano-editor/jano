@@ -6,13 +6,11 @@ import { installPlugin, searchPlugins, fetchPluginList } from "./plugins/registr
 
 const args = process.argv.slice(2);
 
-// read version from package.json
+import { createRequire } from "node:module";
 const VERSION = (() => {
   try {
-    const { readFileSync } = require("node:fs");
-    const { join, dirname } = require("node:path");
-    const pkg = JSON.parse(readFileSync(join(dirname(__filename), "..", "package.json"), "utf8"));
-    return pkg.version || "dev";
+    const require = createRequire(import.meta.url);
+    return require("../package.json").version || "dev";
   } catch {
     return "dev";
   }
