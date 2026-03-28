@@ -17,6 +17,7 @@
   "dependencies": {
     "@jano-editor/plugin-types": "workspace:*",
     "@jano-editor/ui": "workspace:*",
-    "adm-zip": "^0.5.16"
+    "adm-zip": "^0.5.16",
+    "clipboardy": "^5.3.1"
   }
 }

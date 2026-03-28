@@ -9,6 +9,16 @@ import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
 
+// copy to system clipboard (cross-platform)
+async function copyToSystemClipboard(text: string) {
+  try {
+    const { default: clipboardy } = await import("clipboardy");
+    await clipboardy.write(text);
+  } catch {
+    // silent fail on headless environments
+  }
+}
+
 export type HandleKeyResult =
   | "continue"
   | "exit"
@@ -184,6 +194,15 @@ export function handleKey(
       case "f":
         return "search";
 
+      case "a": {
+        cm.clearExtras();
+        const lastLine = editor.lines.length - 1;
+        cm.primary.anchor = { x: 0, y: 0 };
+        cm.primary.x = editor.lines[lastLine].length;
+        cm.primary.y = lastLine;
+        break;
+      }
+
       case "g":
         return "goto";
 
@@ -255,7 +274,7 @@ export function handleKey(
         });
         if (parts.length > 0) {
           editor.clipboardParts = parts;
-          cm.clearSelectionAll();
+          void copyToSystemClipboard(parts.join("\n"));
         }
         break;
       }
@@ -278,6 +297,7 @@ export function handleKey(
           }
         });
         editor.clipboardParts = parts;
+        void copyToSystemClipboard(parts.join("\n"));
         commit(undo, cm, editor);
         break;
       }
