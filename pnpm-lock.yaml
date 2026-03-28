@@ -57,7 +57,11 @@ importers:
         specifier: ^0.24.0
         version: 0.24.2
 
-  packages/ui: {}
+  packages/ui:
+    devDependencies:
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
 
 packages:
 
