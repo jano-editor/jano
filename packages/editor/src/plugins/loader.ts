@@ -58,7 +58,7 @@ export async function loadPlugins(): Promise<LoadResult> {
       const raw = readFileSync(manifestPath, "utf8");
       manifest = validateManifest(JSON.parse(raw));
     } catch (err) {
-      result.errors.push({ dir, error: `Invalid plugin.json: ${err}` });
+      result.errors.push({ dir, error: `Invalid plugin.json: ${String(err)}` });
       continue;
     }
 
@@ -117,7 +117,7 @@ export async function loadPlugins(): Promise<LoadResult> {
 
       result.plugins.push({ manifest, plugin, dir });
     } catch (err) {
-      result.errors.push({ dir, error: `Failed to load: ${err}` });
+      result.errors.push({ dir, error: `Failed to load: ${String(err)}` });
     }
   }
 
