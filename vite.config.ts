@@ -8,16 +8,18 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: "packages/editor/dist",
     lib: {
-      entry: "packages/editor/src/index.ts",
+      entry: "packages/editor/src/cli.ts",
       formats: ["es"],
       fileName: "jano",
     },
     rollupOptions: {
-      external: [/^node:/],
+      external: [/^node:/, "adm-zip"],
     },
     target: "node22",
     ssr: true,
+    emptyOutDir: true,
   },
   staged: {
     "*": "vp check --fix",

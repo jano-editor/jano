@@ -59,7 +59,7 @@ jobs:
           fi
 
       - name: Build
-        run: pnpm build
+        run: pnpm --filter ${{ steps.pkg.outputs.filter }} build
 
       - name: Publish to npm
         working-directory: ${{ steps.pkg.outputs.dir }}
