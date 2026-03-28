@@ -1,5 +1,13 @@
 #!/usr/bin/env node
-import { createScreen, createDraw, showDialog, showSearch } from "@jano-editor/ui";
+import {
+  createScreen,
+  createDraw,
+  showDialog,
+  showSearch,
+  drawList,
+  listMoveUp,
+  listMoveDown,
+} from "@jano-editor/ui";
 import { createEditor, saveAs } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
@@ -9,6 +17,7 @@ import { render, getViewDimensions } from "./render.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths } from "./plugins/config.ts";
 import type { LanguagePlugin } from "./plugins/types.ts";
+import { createValidator } from "./validator.ts";
 
 const filePath = process.argv[2] || undefined;
 
@@ -21,11 +30,14 @@ const undo = createUndoManager();
 let plugin: LanguagePlugin | null = null;
 let pluginVersion: string | undefined;
 let dialogOpen = false;
+let validator = createValidator(null);
 
 function update() {
   const { viewW, viewH } = getViewDimensions(screen, editor.lines.length);
   cm.ensureVisible(viewW, viewH);
-  render(screen, draw, editor, cm, plugin, pluginVersion);
+  render(screen, draw, editor, cm, plugin, pluginVersion, validator.state.diagnostics);
+  // validator decides internally if content changed — debounced, no re-render loop
+  validator.schedule(editor.lines);
 }
 
 function reloadPlugin() {
@@ -36,6 +48,7 @@ function reloadPlugin() {
   } else {
     pluginVersion = undefined;
   }
+  validator = createValidator(plugin);
 }
 
 async function trySave(filePath: string) {
@@ -388,6 +401,152 @@ async function openGoto() {
   update();
 }
 
+function showDiagnostics(): Promise<void> {
+  const diags = validator.state.diagnostics;
+
+  if (diags.length === 0) {
+    dialogOpen = true;
+    return showDialog(
+      screen,
+      draw,
+      {
+        title: "Diagnostics",
+        message: "No issues found.",
+        buttons: [{ label: "OK", value: "ok" }],
+        border: "round",
+      },
+      update,
+    ).then(() => {
+      dialogOpen = false;
+      update();
+    });
+  }
+
+  dialogOpen = true;
+
+  return new Promise((resolve) => {
+    const dialogW = Math.min(65, screen.width - 4);
+    const listH = Math.min(18, screen.height - 6);
+    let listState = { selectedIndex: 0, scrollOffset: 0 };
+    let backgroundDrawn = false;
+
+    const errors = diags.filter((d) => d.severity === "error").length;
+    const warnings = diags.filter((d) => d.severity === "warning").length;
+    const maxMsg = dialogW - 18;
+
+    const listItems = diags.map((d) => {
+      const icon = d.severity === "error" ? "✗" : d.severity === "warning" ? "⚠" : "ℹ";
+      const msg = d.message.length > maxMsg ? d.message.substring(0, maxMsg - 1) + "…" : d.message;
+      return {
+        label: ` ${icon} Ln ${String(d.line + 1).padStart(4)} │ ${msg}`,
+        value: `${d.line}`,
+      };
+    });
+
+    function renderDiag() {
+      if (!backgroundDrawn) {
+        update();
+        backgroundDrawn = true;
+      }
+
+      const totalH = 3 + listH + 1;
+      const x = Math.floor((screen.width - dialogW) / 2);
+      const y = 1;
+
+      draw.rect(x, y, dialogW, totalH, {
+        fg: [80, 90, 105] as [number, number, number],
+        border: "round",
+        fill: [30, 33, 40] as [number, number, number],
+      });
+
+      // title + counts
+      draw.text(x + Math.floor((dialogW - 15) / 2), y, " Diagnostics ", {
+        fg: [230, 200, 100] as [number, number, number],
+      });
+      const counts: string[] = [];
+      if (errors > 0) counts.push(`✗ ${errors}`);
+      if (warnings > 0) counts.push(`⚠ ${warnings}`);
+      if (counts.length > 0) {
+        const countText = ` ${counts.join("  ")} `;
+        draw.text(x + dialogW - countText.length - 1, y, countText, {
+          fg:
+            errors > 0
+              ? ([255, 80, 80] as [number, number, number])
+              : ([229, 192, 123] as [number, number, number]),
+        });
+      }
+
+      // hint
+      draw.text(x + 2, y + 1, "↑↓ Navigate  Enter Jump  Esc Close", {
+        fg: [70, 75, 85] as [number, number, number],
+        bg: [30, 33, 40] as [number, number, number],
+      });
+
+      // separator
+      for (let i = 1; i < dialogW - 1; i++) {
+        draw.char(x + i, y + 2, "─", { fg: [80, 90, 105] as [number, number, number] });
+      }
+
+      // list
+      drawList(draw, {
+        x: x + 1,
+        y: y + 3,
+        width: dialogW - 2,
+        height: listH,
+        items: listItems,
+        selectedIndex: listState.selectedIndex,
+        scrollOffset: listState.scrollOffset,
+        bg: [30, 33, 40] as [number, number, number],
+      });
+
+      screen.hideCursor();
+      draw.flush();
+    }
+
+    function onData(data: Buffer) {
+      if (data[0] === 0x1b && data.length === 1) {
+        cleanup();
+        dialogOpen = false;
+        update();
+        resolve();
+        return;
+      }
+
+      if (data[0] === 13 && diags.length > 0) {
+        cleanup();
+        dialogOpen = false;
+        const d = diags[listState.selectedIndex];
+        cm.primary.y = d.line;
+        cm.primary.x = d.col;
+        cm.primary.anchor = null;
+        cm.clearExtras();
+        update();
+        resolve();
+        return;
+      }
+
+      if (data[0] === 0x1b && data[1] === 0x5b) {
+        const seq = data.toString("utf8", 2);
+        if (seq === "A" && diags.length > 0) {
+          listState = listMoveUp(listState, diags.length);
+          renderDiag();
+        }
+        if (seq === "B" && diags.length > 0) {
+          listState = listMoveDown(listState, diags.length, listH);
+          renderDiag();
+        }
+      }
+    }
+
+    function cleanup() {
+      process.stdin.removeListener("data", onData);
+    }
+
+    process.stdin.on("data", onData);
+    renderDiag();
+  });
+}
+
 const debug = !!process.env.JANO_DEBUG;
 function log(msg: string) {
   if (debug) console.log(msg);
@@ -420,6 +579,9 @@ async function start() {
       const loaded = getLoadedPlugins().find((p) => p.plugin === plugin);
       pluginVersion = loaded?.manifest.version;
       log(`[jano] language: ${plugin.name}`);
+      validator = createValidator(plugin, () => {
+        if (!dialogOpen) update();
+      });
     }
   }
 
@@ -449,6 +611,9 @@ process.stdin.on("data", (data) => {
     case "goto":
       void openGoto();
       return;
+    case "diagnostics":
+      void showDiagnostics();
+      return;
     case "save":
       if (editor.filePath) {
         void trySave(editor.filePath).then(() => update());
@@ -461,4 +626,4 @@ process.stdin.on("data", (data) => {
   update();
 });
 
-process.stdout.on("resize", update);
+process.stdout.on("resize", () => update());

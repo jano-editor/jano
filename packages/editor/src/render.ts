@@ -1,7 +1,7 @@
 import type { Screen, Draw, RGB } from "@jano-editor/ui";
 import type { EditorState } from "./editor.ts";
 import type { CursorManager } from "./cursor-manager.ts";
-import type { LanguagePlugin } from "./plugins/types.ts";
+import type { LanguagePlugin, Diagnostic } from "./plugins/types.ts";
 import { tokenizeLine } from "./highlight.ts";
 import { tokenColors } from "./plugins/types.ts";
 
@@ -20,6 +20,9 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   list.push([isWindows ? "^⌥↕" : "^⇧↕", "Multi"]);
   if (plugin?.onFormat) {
     list.push(["F3", "Format"]);
+  }
+  if (plugin?.onValidate) {
+    list.push(["F4", "Issues"]);
   }
   return list;
 }
@@ -44,6 +47,7 @@ export function render(
   cm: CursorManager,
   plugin: LanguagePlugin | null,
   pluginVersion?: string,
+  diagnostics?: Diagnostic[],
 ) {
   draw.clear();
 
@@ -75,10 +79,20 @@ export function render(
     const lineIdx = y + cm.scrollY;
     if (lineIdx >= editor.lines.length) break;
 
-    // line number (highlight current line)
+    // line number (highlight current line, red for errors)
     const lineNum = String(lineIdx + 1).padStart(gw - 1, " ") + " ";
     const isCurrentLine = lineIdx === cm.primary.y;
-    draw.text(1, contentTop + y, lineNum, { fg: isCurrentLine ? [180, 185, 195] : [70, 75, 85] });
+    const lineDiags = diagnostics?.filter((d) => d.line === lineIdx) || [];
+    const hasError = lineDiags.some((d) => d.severity === "error");
+    const hasWarning = lineDiags.some((d) => d.severity === "warning");
+    const lineNumFg: RGB = hasError
+      ? [255, 80, 80]
+      : hasWarning
+        ? [229, 192, 123]
+        : isCurrentLine
+          ? [180, 185, 195]
+          : [70, 75, 85];
+    draw.text(1, contentTop + y, lineNum, { fg: lineNumFg });
 
     // tokenize line for highlighting
     const line = editor.lines[lineIdx];
@@ -108,7 +122,15 @@ export function render(
         draw.char(screenX, screenY, ch, { fg: [0, 0, 0], bg: [200, 200, 200] });
       } else if (charIdx < line.length) {
         const fg = colorMap[charIdx] ?? [171, 178, 191];
-        draw.char(screenX, screenY, ch, { fg });
+        const errorBg: RGB | undefined = hasError
+          ? [60, 20, 20]
+          : hasWarning
+            ? [50, 40, 15]
+            : undefined;
+        draw.char(screenX, screenY, ch, { fg, bg: errorBg });
+      } else if (hasError || hasWarning) {
+        // fill rest of error line with tinted background
+        draw.char(screenX, screenY, " ", { bg: hasError ? [60, 20, 20] : [50, 40, 15] });
       }
     }
   }
@@ -161,6 +183,20 @@ export function render(
     fg: editor.dirty ? [229, 192, 123] : [130, 135, 145],
     bg: [45, 50, 60],
   });
+  // right: diagnostics count
+  if (diagnostics && diagnostics.length > 0) {
+    const errors = diagnostics.filter((d) => d.severity === "error").length;
+    const warnings = diagnostics.filter((d) => d.severity === "warning").length;
+    const parts: string[] = [];
+    if (errors > 0) parts.push(`✗ ${errors}`);
+    if (warnings > 0) parts.push(`⚠ ${warnings}`);
+    const diagInfo = parts.join("  ") + " ";
+    const diagX = w - diagInfo.length - 1;
+    draw.text(diagX, statusY, diagInfo, {
+      fg: errors > 0 ? [255, 80, 80] : [229, 192, 123],
+      bg: [45, 50, 60],
+    });
+  }
   // right: multi-cursor info
   if (cm.isMulti) {
     const multiInfo = `${cm.count} cursors `;

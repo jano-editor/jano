@@ -9,7 +9,14 @@ import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
 
-export type HandleKeyResult = "continue" | "exit" | "history" | "search" | "goto" | "save";
+export type HandleKeyResult =
+  | "continue"
+  | "exit"
+  | "history"
+  | "search"
+  | "goto"
+  | "save"
+  | "diagnostics";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -144,6 +151,7 @@ export function handleKey(
   // --- function keys (never insert as text) ---
   if (key.name === "f1" || key.name === "f2" || key.name === "f3" || key.name === "f4") {
     if (key.name === "f2") return "history";
+    if (key.name === "f4") return "diagnostics";
     if (key.name === "f3" && plugin?.onFormat) {
       const linesBefore = [...editor.lines];
       snap(undo, "format", cm, editor);

@@ -30,6 +30,10 @@ export function buildContext(
     },
     dirty: editor.dirty,
     language: "",
+    settings: {
+      tabSize: 2,
+      insertSpaces: true,
+    },
   };
 }
 

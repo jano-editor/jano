@@ -84,6 +84,12 @@ export interface PluginContext {
 
   dirty: boolean;
   language: string;
+
+  // editor settings — plugins should respect these
+  settings: {
+    tabSize: number;
+    insertSpaces: boolean;
+  };
 }
 
 // ----- Plugin Responses -----
@@ -97,6 +103,18 @@ export interface EditResult {
   edits?: TextEdit[];
   replaceAll?: string[];
   cursors?: Cursor[];
+}
+
+// ----- Diagnostics -----
+
+export type DiagnosticSeverity = "error" | "warning" | "info";
+
+export interface Diagnostic {
+  line: number;
+  col: number;
+  endCol?: number;
+  severity: DiagnosticSeverity;
+  message: string;
 }
 
 // ----- Plugin Interface -----
@@ -123,4 +141,8 @@ export interface LanguagePlugin {
 
   // fired when file is opened
   onOpen?(context: PluginContext): void;
+
+  // validate document content — called async, debounced
+  // return diagnostics (errors, warnings) for the editor to display
+  onValidate?(lines: readonly string[]): Diagnostic[];
 }

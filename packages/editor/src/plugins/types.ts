@@ -11,6 +11,8 @@ export type {
   PluginContext,
   TextEdit,
   EditResult,
+  Diagnostic,
+  DiagnosticSeverity,
   LanguagePlugin,
 } from "@jano-editor/plugin-types";
 
