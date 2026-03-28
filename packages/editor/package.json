@@ -1,17 +1,19 @@
 {
   "name": "@jano-editor/editor",
   "version": "0.1.0",
+  "description": "A modern terminal editor with plugin support",
   "bin": {
-    "jano": "src/index.ts"
+    "jano": "dist/jano.js"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/jano.js",
   "scripts": {
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@jano-editor/plugin-types": "workspace:*",
-    "@jano-editor/ui": "workspace:*",
     "adm-zip": "^0.5.16"
   }
 }
