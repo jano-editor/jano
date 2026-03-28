@@ -42,6 +42,12 @@ importers:
 
   packages/editor:
     dependencies:
+      '@jano-editor/plugin-types':
+        specifier: workspace:*
+        version: link:../plugin-types
+      '@jano-editor/ui':
+        specifier: workspace:*
+        version: link:../ui
       adm-zip:
         specifier: ^0.5.16
         version: 0.5.16
