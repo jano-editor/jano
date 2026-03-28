@@ -14,6 +14,7 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
     ["^X", "Cut"],
     ["^V", "Paste"],
   ];
+  list.push(["^A", "Select All"]);
   list.push(["^F", "Search"]);
   list.push(["^G", "Go to"]);
   const isWindows = process.platform === "win32" || !!process.env["WSL_DISTRO_NAME"];
@@ -68,9 +69,10 @@ export function render(
   const titleX = Math.floor((w - title.length) / 2);
   draw.text(titleX, 0, title, { fg: [230, 200, 100] });
 
-  // plugin version (right side)
-  if (plugin && pluginVersion) {
-    const vText = ` v${pluginVersion} `;
+  // editor version (right side of title bar)
+  const editorVersion = process.env.JANO_VERSION;
+  if (editorVersion) {
+    const vText = ` v${editorVersion} `;
     draw.text(w - vText.length - 1, 0, vText, { fg: [80, 85, 95] });
   }
 
@@ -175,6 +177,14 @@ export function render(
   // left: cursor position
   const posInfo = ` Ln ${p.y + 1}, Col ${p.x + 1}`;
   draw.text(2, statusY, posInfo, { fg: [180, 185, 195], bg: [45, 50, 60] });
+  // plugin info
+  if (plugin) {
+    const pluginInfo = ` ${plugin.name}${pluginVersion ? ` v${pluginVersion}` : ""} `;
+    draw.text(2 + posInfo.length + 1, statusY, pluginInfo, {
+      fg: [100, 105, 115],
+      bg: [45, 50, 60],
+    });
+  }
   // center: file info
   const modified = editor.dirty ? " ●" : "";
   const fileInfo = `${editor.lines.length} lines${modified}`;

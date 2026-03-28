@@ -555,6 +555,7 @@ function log(msg: string) {
 // init
 async function start() {
   const paths = getPaths();
+  log(`[jano] v${process.env.JANO_VERSION || "dev"}`);
   log(`[jano] config: ${paths.config}`);
   log(`[jano] plugins: ${paths.plugins}`);
 

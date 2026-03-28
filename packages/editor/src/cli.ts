@@ -6,6 +6,24 @@ import { installPlugin, searchPlugins, fetchPluginList } from "./plugins/registr
 
 const args = process.argv.slice(2);
 
+// read version from package.json
+const VERSION = (() => {
+  try {
+    const { readFileSync } = require("node:fs");
+    const { join, dirname } = require("node:path");
+    const pkg = JSON.parse(readFileSync(join(dirname(__filename), "..", "package.json"), "utf8"));
+    return pkg.version || "dev";
+  } catch {
+    return "dev";
+  }
+})();
+
+// --version flag
+if (args.includes("--version") || args.includes("-v")) {
+  console.log(`jano v${VERSION}`);
+  process.exit(0);
+}
+
 // --debug flag
 if (args.includes("--debug")) {
   process.env.JANO_DEBUG = "1";
@@ -112,6 +130,7 @@ async function handlePluginCommand() {
 }
 
 // route: "jano plugin ..." or "jano <file>"
+process.env.JANO_VERSION = VERSION;
 if (args[0] === "plugin") {
   void handlePluginCommand();
 } else {
