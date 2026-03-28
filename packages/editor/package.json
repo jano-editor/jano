@@ -1,6 +1,6 @@
 {
   "name": "@jano-editor/editor",
-  "version": "1.0.0-alpha.1",
+  "version": "0.1.0",
   "description": "A modern terminal editor with plugin support",
   "bin": {
     "jano": "dist/cli.js"
@@ -12,7 +12,7 @@
   "main": "dist/cli.js",
   "scripts": {
     "dev": "tsx src/cli.ts",
-    "build": "vp build"
+    "build": "cd ../.. && vp build"
   },
   "dependencies": {
     "@jano-editor/plugin-types": "workspace:*",
