@@ -1,10 +1,17 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import type { LanguagePlugin } from "./types.ts";
 import { validateManifest, CURRENT_API_VERSION } from "./manifest.ts";
 import type { PluginManifest } from "./manifest.ts";
 import { getPluginsDir, loadConfig, isPluginEnabled } from "./config.ts";
+
+// make require() available globally for plugins that bundle CJS dependencies
+const globalAny = globalThis as any;
+if (!globalAny.require) {
+  globalAny.require = createRequire(import.meta.url);
+}
 
 export interface LoadedPlugin {
   manifest: PluginManifest;
