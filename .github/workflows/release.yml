@@ -1,4 +1,4 @@
-name: Release to npm
+name: Release
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   release:
-    name: Publish to npm
+    name: Publish
     runs-on: ubuntu-24.04-arm
 
     permissions:
@@ -19,6 +19,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -37,22 +40,24 @@ jobs:
         id: pkg
         run: |
           TAG="${{ github.ref_name }}"
-          # extract package name and version from tag (e.g. plugin-types-v1.0.0)
           if [[ "$TAG" =~ ^plugin-types-v(.+)$ ]]; then
             echo "dir=packages/plugin-types" >> $GITHUB_OUTPUT
             echo "name=@jano-editor/plugin-types" >> $GITHUB_OUTPUT
             echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "filter=@jano-editor/plugin-types" >> $GITHUB_OUTPUT
+            echo "is_editor=false" >> $GITHUB_OUTPUT
           elif [[ "$TAG" =~ ^ui-v(.+)$ ]]; then
             echo "dir=packages/ui" >> $GITHUB_OUTPUT
             echo "name=@jano-editor/ui" >> $GITHUB_OUTPUT
             echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "filter=@jano-editor/ui" >> $GITHUB_OUTPUT
+            echo "is_editor=false" >> $GITHUB_OUTPUT
           elif [[ "$TAG" =~ ^editor-v(.+)$ ]]; then
             echo "dir=packages/editor" >> $GITHUB_OUTPUT
             echo "name=@jano-editor/editor" >> $GITHUB_OUTPUT
             echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "filter=@jano-editor/editor" >> $GITHUB_OUTPUT
+            echo "is_editor=true" >> $GITHUB_OUTPUT
           else
             echo "Unknown tag: $TAG"
             exit 1
@@ -72,11 +77,28 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Compile binaries
+        if: steps.pkg.outputs.is_editor == 'true'
+        run: |
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-linux-x64 --outfile jano-linux-x64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-darwin-arm64 --outfile jano-darwin-arm64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-windows-x64 --outfile jano-windows-x64.exe
+
       - name: Create GitHub Release
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
-            --generate-notes \
-            --latest
+          if [[ "${{ steps.pkg.outputs.is_editor }}" == "true" ]]; then
+            gh release create "${{ github.ref_name }}" \
+              jano-linux-x64 \
+              jano-darwin-arm64 \
+              jano-windows-x64.exe \
+              --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
+              --generate-notes \
+              --latest
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
+              --generate-notes \
+              --latest
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -49,6 +49,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -60,7 +62,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: 🧪 Run tests
-        run: pnpm test --run
+        run: bun test
 
   build:
     name: 🔨 Build
@@ -68,6 +70,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
 
       - uses: pnpm/action-setup@v4
 
@@ -81,3 +85,9 @@ jobs:
 
       - name: 🔨 Build
         run: pnpm build
+
+      - name: 🏗️ Compile binaries
+        run: |
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-linux-x64 --outfile dist/jano-linux-x64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-darwin-arm64 --outfile dist/jano-darwin-arm64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-windows-x64 --outfile dist/jano-windows-x64.exe
