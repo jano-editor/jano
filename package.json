@@ -8,19 +8,17 @@
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "test": "vp test",
-    "test:coverage": "vp test --coverage.enabled --coverage.provider=v8",
+    "test": "bun test",
     "build": "vp build",
-    "precommit": "vp check --fix && vp test --run && vp build"
+    "precommit": "vp check --fix && bun test && vp build"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
+    "@types/bun": "^1.3.11",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^4.1.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vite-plus": "catalog:",
-    "vitest": "catalog:"
+    "vite-plus": "catalog:"
   },
   "packageManager": "pnpm@10.33.0"
 }

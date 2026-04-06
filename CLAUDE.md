@@ -71,6 +71,70 @@
 - [x] 60k+ lines performance
 - [x] Vite+ build (21ms, 59KB)
 
+## Architecture Details
+
+### Entry Points
+
+- **CLI:** `packages/editor/src/cli.ts` - Handles `jano plugin install/remove/search/list`, `--version`, `--help`
+- **Editor:** `packages/editor/src/index.ts` - Terminal UI event loop, plugin init, editor rendering
+
+### Build
+
+- Vite + Rollup, target Node 22 (ES2022), ESM only
+- Output: single `cli.js` ES module
+- Externals in vite.config.ts: `adm-zip`, `clipboardy`, all `node:*` modules
+- Final binary: ~59KB
+
+### Plugin System (critical architecture)
+
+**Loading:** `packages/editor/src/plugins/loader.ts`
+
+- Plugins are dynamically imported at runtime: `await import(pathToFileURL(entryPath).href)`
+- A global `require` is made available for plugins that bundle CJS deps (loader.ts line 10-14)
+- Incompatible API versions are skipped at load time
+
+**Storage (XDG-compliant):**
+
+- Linux: `~/.local/share/jano/plugins/`
+- macOS: `~/Library/Application Support/jano/plugins/`
+- Windows: `%LOCALAPPDATA%\jano\plugins\`
+- Override via `JANO_HOME` env var
+
+**Plugin structure:** Each plugin is a directory with:
+
+- `plugin.json` - Metadata (name, version, API version, extensions, entry point)
+- Entry file (ES module)
+
+**Plugin interface** (`@jano-editor/plugin-types` → `LanguagePlugin`):
+
+- `highlight()`, `onKeyDown()`, `onCursorAction()`, `onFormat()`, `onSave()`, `onValidate()`, `onOpen()`
+
+**Installation:** ZIP download from `https://janoeditor.dev/api/plugins/`, extracted via `adm-zip`
+
+**API versioning:** `CURRENT_API_VERSION` in `packages/editor/src/plugins/manifest.ts`
+
+### Runtime Dependencies
+
+- `clipboardy` - Clipboard access (delegates to system commands: xclip/xsel on Linux, pbcopy on macOS, PowerShell on Windows). Optional, gracefully fails on headless.
+- `adm-zip` - ZIP extraction for plugin installation. Pure JS, no native bindings.
+- **No native/C++ addons in runtime.** All native deps (oxfmt bindings etc.) are dev-only.
+
+### Standalone Binary Distribution (planned)
+
+**Goal:** `curl | bash` installer that downloads a single binary instead of requiring npm/Node.
+
+**Bun compile is the most promising approach:**
+
+- `bun build --compile` supports runtime `import()` from external files → plugin system should work
+- Cross-compile built-in: `--target=bun-linux-x64`, `--target=bun-darwin-arm64`
+- No native addons to worry about
+
+**Test with:** `bun build ./packages/editor/dist/cli.js --compile --outfile jano && ./jano plugin list`
+
+**Key concern:** Dynamic plugin loading (`import(pathToFileURL(...))`) must work from compiled binary. Bun supports this, Node SEA does not (would need `createRequire` workaround).
+
+**Node SEA alternative:** More restrictive with dynamic imports, harder to make plugin loading work. Only consider if Bun proves incompatible.
+
 ## Code Conventions
 
 - Comments in English
