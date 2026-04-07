@@ -6,15 +6,8 @@ import { installPlugin, searchPlugins, fetchPluginList } from "./plugins/registr
 
 const args = process.argv.slice(2);
 
-import { createRequire } from "node:module";
-const VERSION = (() => {
-  try {
-    const require = createRequire(import.meta.url);
-    return require("../package.json").version || "dev";
-  } catch {
-    return "dev";
-  }
-})();
+declare const __VERSION__: string;
+const VERSION = typeof __VERSION__ !== "undefined" ? __VERSION__ : "dev";
 
 // --version flag
 if (args.includes("--version") || args.includes("-v")) {

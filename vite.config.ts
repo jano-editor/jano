@@ -1,6 +1,12 @@
 import { defineConfig } from "vite-plus";
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync("packages/editor/package.json", "utf8"));
 
 export default defineConfig({
+  define: {
+    __VERSION__: JSON.stringify(pkg.version),
+  },
   test: {
     include: ["packages/**/src/__tests__/*.test.ts"],
     coverage: {
