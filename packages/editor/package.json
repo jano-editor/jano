@@ -1,6 +1,6 @@
 {
   "name": "@jano-editor/editor",
-  "version": "1.0.0-alpha.12",
+  "version": "1.0.0-alpha.13",
   "description": "A modern terminal editor with plugin support",
   "bin": {
     "jano": "dist/cli.js"
