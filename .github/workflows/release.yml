@@ -102,3 +102,53 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        if: steps.pkg.outputs.is_editor == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.pkg.outputs.version }}"
+          SHA_DARWIN=$(sha256sum jano-darwin-arm64 | cut -d' ' -f1)
+          SHA_LINUX=$(sha256sum jano-linux-x64 | cut -d' ' -f1)
+
+          git clone https://x-access-token:${TAP_TOKEN}@github.com/jano-editor/homebrew-jano.git /tmp/homebrew-jano
+
+          cat > /tmp/homebrew-jano/Formula/jano.rb << FORMULA
+          class Jano < Formula
+            desc "Terminal editor with plugin-based syntax highlighting and formatting"
+            homepage "https://janoeditor.dev"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-darwin-arm64"
+                sha256 "${SHA_DARWIN}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-linux-x64"
+                sha256 "${SHA_LINUX}"
+              end
+            end
+
+            def install
+              binary = stable.url.split("/").last
+              bin.install binary => "jano"
+            end
+
+            test do
+              assert_match "jano v#{version}", shell_output("#{bin}/jano --version")
+            end
+          end
+          FORMULA
+
+          cd /tmp/homebrew-jano
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/jano.rb
+          git commit -m "update jano to v${VERSION}"
+          git push
