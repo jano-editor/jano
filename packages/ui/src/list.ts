@@ -5,6 +5,7 @@ export interface ListItem {
   label: string;
   value: string;
   description?: string;
+  disabled?: boolean;
 }
 
 export interface ListOptions {
@@ -20,6 +21,7 @@ export interface ListOptions {
   selectedFg?: RGB;
   selectedBg?: RGB;
   descriptionFg?: RGB;
+  disabledFg?: RGB;
 }
 
 export interface ListState {
@@ -41,6 +43,7 @@ export function drawList(draw: Draw, opts: ListOptions): void {
     selectedFg = [255, 255, 255],
     selectedBg = [60, 100, 180],
     descriptionFg = [100, 105, 115],
+    disabledFg = [80, 85, 92],
   } = opts;
 
   for (let i = 0; i < height; i++) {
@@ -57,8 +60,9 @@ export function drawList(draw: Draw, opts: ListOptions): void {
 
     const item = items[itemIdx];
     const isSelected = itemIdx === selectedIndex;
-    const rowFg = isSelected ? selectedFg : fg;
-    const rowBg = isSelected ? selectedBg : bg;
+    const isDisabled = !!item.disabled;
+    const rowFg = isDisabled ? disabledFg : isSelected ? selectedFg : fg;
+    const rowBg = isSelected && !isDisabled ? selectedBg : bg;
 
     // fill row background
     for (let col = 0; col < width; col++) {
@@ -75,7 +79,7 @@ export function drawList(draw: Draw, opts: ListOptions): void {
       if (descMaxW > 3) {
         const desc = item.description.substring(0, descMaxW);
         draw.text(x + width - desc.length, screenY, desc, {
-          fg: isSelected ? selectedFg : descriptionFg,
+          fg: isDisabled ? disabledFg : isSelected ? selectedFg : descriptionFg,
           bg: rowBg,
         });
       }
@@ -96,8 +100,13 @@ export function drawList(draw: Draw, opts: ListOptions): void {
   }
 }
 
-export function listMoveUp(state: ListState, _itemCount: number): ListState {
-  const selectedIndex = Math.max(0, state.selectedIndex - 1);
+export function listMoveUp(state: ListState, itemCountOrItems?: number | ListItem[]): ListState {
+  let items: ListItem[] | null = null;
+  if (Array.isArray(itemCountOrItems)) items = itemCountOrItems;
+
+  let i = state.selectedIndex - 1;
+  while (i >= 0 && items && items[i]?.disabled) i--;
+  const selectedIndex = i < 0 ? state.selectedIndex : i;
   let scrollOffset = state.scrollOffset;
   if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
   return { selectedIndex, scrollOffset };
@@ -105,10 +114,21 @@ export function listMoveUp(state: ListState, _itemCount: number): ListState {
 
 export function listMoveDown(
   state: ListState,
-  itemCount: number,
+  itemCountOrItems: number | ListItem[],
   visibleHeight: number,
 ): ListState {
-  const selectedIndex = Math.min(itemCount - 1, state.selectedIndex + 1);
+  let items: ListItem[] | null = null;
+  let itemCount: number;
+  if (Array.isArray(itemCountOrItems)) {
+    items = itemCountOrItems;
+    itemCount = items.length;
+  } else {
+    itemCount = itemCountOrItems;
+  }
+
+  let i = state.selectedIndex + 1;
+  while (i < itemCount && items && items[i]?.disabled) i++;
+  const selectedIndex = i >= itemCount ? state.selectedIndex : i;
   let scrollOffset = state.scrollOffset;
   if (selectedIndex >= scrollOffset + visibleHeight)
     scrollOffset = selectedIndex - visibleHeight + 1;
