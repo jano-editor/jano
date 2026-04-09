@@ -9,6 +9,7 @@ import {
   pasteText,
   moveLinesUp,
   moveLinesDown,
+  insertTab,
 } from "../editor.ts";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
 
@@ -127,6 +128,43 @@ describe("editor operations", () => {
       const ok = moveLinesDown(e, 1, 2);
       expect(ok).toBe(true);
       expect(e.lines).toEqual(["a", "d", "b", "c"]);
+    });
+  });
+
+  describe("insertTab", () => {
+    it("defaults to 2 spaces", () => {
+      const e = makeEditor(["abc"]);
+      const newX = insertTab(e, 1, 0);
+      expect(e.lines[0]).toBe("a  bc");
+      expect(newX).toBe(3);
+    });
+
+    it("inserts tabSize spaces when insertSpaces=true", () => {
+      const e = makeEditor(["abc"]);
+      const newX = insertTab(e, 1, 0, 4, true);
+      expect(e.lines[0]).toBe("a    bc");
+      expect(newX).toBe(5);
+    });
+
+    it("inserts a real tab when insertSpaces=false", () => {
+      const e = makeEditor(["abc"]);
+      const newX = insertTab(e, 1, 0, 4, false);
+      expect(e.lines[0]).toBe("a\tbc");
+      expect(newX).toBe(2);
+    });
+
+    it("supports tabSize=8", () => {
+      const e = makeEditor([""]);
+      const newX = insertTab(e, 0, 0, 8, true);
+      expect(e.lines[0]).toBe("        ");
+      expect(newX).toBe(8);
+    });
+
+    it("marks editor dirty", () => {
+      const e = makeEditor(["abc"]);
+      expect(e.dirty).toBe(false);
+      insertTab(e, 0, 0);
+      expect(e.dirty).toBe(true);
     });
   });
 });

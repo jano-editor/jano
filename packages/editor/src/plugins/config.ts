@@ -2,8 +2,21 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 
+export interface EditorSettings {
+  tabSize: number;
+  insertSpaces: boolean;
+  lineNumbers: boolean;
+}
+
+export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
+  tabSize: 2,
+  insertSpaces: true,
+  lineNumbers: true,
+};
+
 export interface JanoConfig {
   plugins: Record<string, { enabled: boolean }>;
+  editor: EditorSettings;
 }
 
 export interface JanoPaths {
@@ -103,14 +116,18 @@ export function loadConfig(): JanoConfig {
   const configPath = getConfigPath();
 
   if (!existsSync(configPath)) {
-    return { plugins: {} };
+    return { plugins: {}, editor: { ...DEFAULT_EDITOR_SETTINGS } };
   }
 
   try {
     const raw = readFileSync(configPath, "utf8");
-    return JSON.parse(raw) as JanoConfig;
+    const parsed = JSON.parse(raw) as Partial<JanoConfig>;
+    return {
+      plugins: parsed.plugins ?? {},
+      editor: { ...DEFAULT_EDITOR_SETTINGS, ...parsed.editor },
+    };
   } catch {
-    return { plugins: {} };
+    return { plugins: {}, editor: { ...DEFAULT_EDITOR_SETTINGS } };
   }
 }
 

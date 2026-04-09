@@ -8,6 +8,7 @@ import { wordBoundaryLeft, wordBoundaryRight } from "./cursor-manager.ts";
 import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
+import { getEditorSettings } from "./settings.ts";
 
 // strip control characters except \t (0x09) and \n (0x0a)
 function stripControlChars(text: string): string {
@@ -39,7 +40,8 @@ export type HandleKeyResult =
   | "goto"
   | "save"
   | "diagnostics"
-  | "help";
+  | "help"
+  | "settings";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -210,6 +212,10 @@ export function handleKey(
   }
 
   // --- function keys (never insert as text) ---
+  if (key.name === "f9") {
+    return "settings";
+  }
+
   if (key.name === "f1" || key.name === "f2" || key.name === "f3" || key.name === "f4") {
     if (key.name === "f1") return "help";
     if (key.name === "f2") return "history";
@@ -510,9 +516,10 @@ export function handleKey(
     // tab
     case "tab": {
       snap(undo, "tab", cm, editor);
+      const s = getEditorSettings();
       cm.forEachBottomUp((c) => {
         const prev = { x: c.x, y: c.y };
-        c.x = ed.insertTab(editor, c.x, c.y);
+        c.x = ed.insertTab(editor, c.x, c.y, s.tabSize, s.insertSpaces);
         notifyPlugin(plugin, "tab", c, prev, editor, cm, screen);
       });
       commit(undo, cm, editor);

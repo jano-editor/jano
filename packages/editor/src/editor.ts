@@ -134,11 +134,18 @@ export function deleteCharForward(state: EditorState, x: number, y: number) {
   state.dirty = true;
 }
 
-export function insertTab(state: EditorState, x: number, y: number): number {
+export function insertTab(
+  state: EditorState,
+  x: number,
+  y: number,
+  tabSize = 2,
+  insertSpaces = true,
+): number {
   const line = state.lines[y];
-  state.lines[y] = line.substring(0, x) + "  " + line.substring(x);
+  const insert = insertSpaces ? " ".repeat(tabSize) : "\t";
+  state.lines[y] = line.substring(0, x) + insert + line.substring(x);
   state.dirty = true;
-  return x + 2;
+  return x + insert.length;
 }
 
 export function moveLinesUp(state: EditorState, startLine: number, endLine: number): boolean {

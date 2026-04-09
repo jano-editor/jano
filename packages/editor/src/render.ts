@@ -4,6 +4,7 @@ import type { CursorManager } from "./cursor-manager.ts";
 import type { LanguagePlugin, Diagnostic } from "./plugins/types.ts";
 import { tokenizeLine } from "./highlight.ts";
 import { tokenColors } from "./plugins/types.ts";
+import { getEditorSettings } from "./settings.ts";
 
 function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   const list = [
@@ -28,6 +29,7 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
 }
 
 export function gutterWidth(lineCount: number): number {
+  if (!getEditorSettings().lineNumbers) return 0;
   return String(lineCount).length + 1;
 }
 
@@ -81,19 +83,21 @@ export function render(
     if (lineIdx >= editor.lines.length) break;
 
     // line number (highlight current line, red for errors)
-    const lineNum = String(lineIdx + 1).padStart(gw - 1, " ") + " ";
     const isCurrentLine = lineIdx === cm.primary.y;
     const lineDiags = diagnostics?.filter((d) => d.line === lineIdx) || [];
     const hasError = lineDiags.some((d) => d.severity === "error");
     const hasWarning = lineDiags.some((d) => d.severity === "warning");
-    const lineNumFg: RGB = hasError
-      ? [255, 80, 80]
-      : hasWarning
-        ? [229, 192, 123]
-        : isCurrentLine
-          ? [180, 185, 195]
-          : [70, 75, 85];
-    draw.text(1, contentTop + y, lineNum, { fg: lineNumFg });
+    if (gw > 0) {
+      const lineNum = String(lineIdx + 1).padStart(gw - 1, " ") + " ";
+      const lineNumFg: RGB = hasError
+        ? [255, 80, 80]
+        : hasWarning
+          ? [229, 192, 123]
+          : isCurrentLine
+            ? [180, 185, 195]
+            : [70, 75, 85];
+      draw.text(1, contentTop + y, lineNum, { fg: lineNumFg });
+    }
 
     // tokenize line for highlighting
     const line = editor.lines[lineIdx];
@@ -221,15 +225,30 @@ export function render(
   for (let x = 0; x < w; x++) {
     draw.char(x, helpY, " ", { bg: [35, 38, 45] });
   }
+
+  // right-aligned: F9 settings (always visible)
+  const settingsKey = "F9";
+  const settingsLabel = "⚙";
+  // emoji takes 2 cells in most terminals
+  const settingsEntryW = settingsKey.length + 1 + 2 + 1;
+  const settingsX = w - settingsEntryW - 1;
+  draw.text(settingsX, helpY, settingsKey, { fg: [220, 220, 220], bg: [60, 65, 75] });
+  draw.text(settingsX + settingsKey.length, helpY, ` ${settingsLabel}`, {
+    fg: [120, 125, 135],
+    bg: [35, 38, 45],
+  });
+
+  // left-aligned shortcuts, stop before settings
+  const leftLimit = settingsX - 1;
   let helpX = 1;
   for (let i = 0; i < sc.length; i++) {
     const [key, label] = sc[i];
     const entryWidth = key.length + label.length + 3;
-    if (helpX + entryWidth > w - 1) break; // stop if no room
+    if (helpX + entryWidth > leftLimit) break; // stop if no room
     draw.text(helpX, helpY, key, { fg: [220, 220, 220], bg: [60, 65, 75] });
     draw.text(helpX + key.length, helpY, ` ${label}`, { fg: [120, 125, 135], bg: [35, 38, 45] });
     helpX += entryWidth;
-    if (i < sc.length - 1 && helpX < w - 1) {
+    if (i < sc.length - 1 && helpX < leftLimit) {
       draw.text(helpX - 1, helpY, "│", { fg: [55, 58, 65], bg: [35, 38, 45] });
     }
   }
