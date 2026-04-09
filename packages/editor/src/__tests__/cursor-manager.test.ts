@@ -157,6 +157,197 @@ describe("CursorManager", () => {
     });
   });
 
+  describe("selectNextOccurrence", () => {
+    it("selects word at cursor when no selection (cursor inside word)", () => {
+      const cm = createCursorManager();
+      const lines = ["hello world hello"];
+      cm.primary.x = 2; // inside "hello"
+      cm.primary.y = 0;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(true);
+      expect(cm.count).toBe(1);
+      expect(cm.primary.anchor).toEqual({ x: 0, y: 0 });
+      expect(cm.primary.x).toBe(5);
+      expect(cm.primary.y).toBe(0);
+    });
+
+    it("selects word when cursor is right after the word", () => {
+      const cm = createCursorManager();
+      const lines = ["hello world"];
+      cm.primary.x = 5; // right after "hello"
+      cm.primary.y = 0;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(true);
+      expect(cm.primary.anchor).toEqual({ x: 0, y: 0 });
+      expect(cm.primary.x).toBe(5);
+    });
+
+    it("returns false when cursor is on non-word char without selection", () => {
+      const cm = createCursorManager();
+      const lines = [", , ,"];
+      cm.primary.x = 2; // on a space between commas, neither side is a word
+      cm.primary.y = 0;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(false);
+      expect(cm.count).toBe(1);
+      expect(cm.primary.anchor).toBeNull();
+    });
+
+    it("adds new cursor at next occurrence when selection exists", () => {
+      const cm = createCursorManager();
+      const lines = ['{ "name": "hello", "other": "hello" }'];
+      cm.primary.anchor = { x: 11, y: 0 };
+      cm.primary.x = 16; // "hello" selected (first one)
+      cm.primary.y = 0;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(true);
+      expect(cm.count).toBe(2);
+      const second = cm.all[1];
+      expect(second.anchor).toEqual({ x: 29, y: 0 });
+      expect(second.x).toBe(34);
+      expect(second.y).toBe(0);
+    });
+
+    it("finds occurrences across multiple lines", () => {
+      const cm = createCursorManager();
+      const lines = ["foo bar", "baz foo qux", "foo end"];
+      // select "foo" on line 0
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 3;
+      cm.primary.y = 0;
+
+      cm.selectNextOccurrence(lines);
+      expect(cm.count).toBe(2);
+      expect(cm.all[1].anchor).toEqual({ x: 4, y: 1 });
+      expect(cm.all[1].x).toBe(7);
+      expect(cm.all[1].y).toBe(1);
+
+      cm.selectNextOccurrence(lines);
+      expect(cm.count).toBe(3);
+      expect(cm.all[2].anchor).toEqual({ x: 0, y: 2 });
+      expect(cm.all[2].x).toBe(3);
+      expect(cm.all[2].y).toBe(2);
+    });
+
+    it("wraps around to the beginning when no more occurrences after cursor", () => {
+      const cm = createCursorManager();
+      const lines = ["foo", "bar", "foo"];
+      // select the last "foo"
+      cm.primary.anchor = { x: 0, y: 2 };
+      cm.primary.x = 3;
+      cm.primary.y = 2;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(true);
+      expect(cm.count).toBe(2);
+      expect(cm.all[1].anchor).toEqual({ x: 0, y: 0 });
+      expect(cm.all[1].y).toBe(0);
+    });
+
+    it("returns false when needle has no other occurrence", () => {
+      const cm = createCursorManager();
+      const lines = ["unique only"];
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 6;
+      cm.primary.y = 0;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(false);
+      expect(cm.count).toBe(1);
+    });
+
+    it("skips positions already covered by another cursor", () => {
+      const cm = createCursorManager();
+      const lines = ["foo foo foo"];
+      // primary already has first "foo"
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 3;
+
+      cm.selectNextOccurrence(lines);
+      // now cursors at "foo"@0 and "foo"@4
+      expect(cm.count).toBe(2);
+      expect(cm.all[1].anchor).toEqual({ x: 4, y: 0 });
+
+      cm.selectNextOccurrence(lines);
+      // adds "foo"@8
+      expect(cm.count).toBe(3);
+      expect(cm.all[2].anchor).toEqual({ x: 8, y: 0 });
+
+      // one more press should wrap and find nothing new (all covered)
+      const ok = cm.selectNextOccurrence(lines);
+      expect(ok).toBe(false);
+      expect(cm.count).toBe(3);
+    });
+
+    it("returns false for multi-line selection", () => {
+      const cm = createCursorManager();
+      const lines = ["abc", "def"];
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 3;
+      cm.primary.y = 1;
+
+      const ok = cm.selectNextOccurrence(lines);
+
+      expect(ok).toBe(false);
+      expect(cm.count).toBe(1);
+    });
+
+    it("matches literal substring after first selection (not whole-word)", () => {
+      const cm = createCursorManager();
+      const lines = ["test tested testing"];
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 4; // "test" selected
+
+      cm.selectNextOccurrence(lines);
+      // should find "test" inside "tested"
+      expect(cm.count).toBe(2);
+      expect(cm.all[1].anchor).toEqual({ x: 5, y: 0 });
+      expect(cm.all[1].x).toBe(9);
+
+      cm.selectNextOccurrence(lines);
+      // should find "test" inside "testing"
+      expect(cm.count).toBe(3);
+      expect(cm.all[2].anchor).toEqual({ x: 12, y: 0 });
+      expect(cm.all[2].x).toBe(16);
+    });
+
+    it("is case-sensitive", () => {
+      const cm = createCursorManager();
+      const lines = ["Hello hello HELLO"];
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 5; // "Hello"
+
+      const ok = cm.selectNextOccurrence(lines);
+      expect(ok).toBe(false);
+      expect(cm.count).toBe(1);
+    });
+
+    it("searches from the LAST cursor, not primary", () => {
+      const cm = createCursorManager();
+      const lines = ["foo a foo b foo c foo"];
+      // primary has first "foo"
+      cm.primary.anchor = { x: 0, y: 0 };
+      cm.primary.x = 3;
+
+      cm.selectNextOccurrence(lines); // adds @6
+      cm.selectNextOccurrence(lines); // adds @12
+      // last cursor is now at @12; next search should start after that
+      cm.selectNextOccurrence(lines); // should add @18
+      expect(cm.count).toBe(4);
+      expect(cm.all[3].anchor).toEqual({ x: 18, y: 0 });
+    });
+  });
+
   describe("mergeIntoSelection", () => {
     it("merges multi-cursor into one selection downward", () => {
       const cm = createCursorManager();
