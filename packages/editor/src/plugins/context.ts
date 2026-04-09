@@ -2,6 +2,7 @@ import { basename, extname } from "node:path";
 import type { PluginContext, Cursor, CursorAction, ActionType, Position } from "./types.ts";
 import type { EditorState } from "../editor.ts";
 import type { CursorManager, SingleCursor } from "../cursor-manager.ts";
+import { getEditorSettings } from "../settings.ts";
 
 export function buildContext(
   editor: EditorState,
@@ -31,8 +32,8 @@ export function buildContext(
     dirty: editor.dirty,
     language: "",
     settings: {
-      tabSize: 2,
-      insertSpaces: true,
+      tabSize: getEditorSettings().tabSize,
+      insertSpaces: getEditorSettings().insertSpaces,
     },
   };
 }

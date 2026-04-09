@@ -99,6 +99,9 @@ export function parseKey(data: Buffer): KeyEvent {
       case "3~":
         key.name = "delete";
         break;
+      case "20~":
+        key.name = "f9";
+        break;
       case "3;5~":
         key.name = "delete";
         key.ctrl = true;
