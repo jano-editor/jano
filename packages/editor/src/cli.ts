@@ -9,9 +9,36 @@ const args = process.argv.slice(2);
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ !== "undefined" ? __VERSION__ : "dev";
 
+export const CLI_COMMANDS = [
+  "  jano <file>           Open file",
+  "  jano                  New file",
+  "  jano --version        Show version",
+  "  jano plugin list      Installed plugins",
+  "  jano plugin search    Browse plugin store",
+  "  jano plugin install   Install plugin",
+  "  jano plugin remove    Remove plugin",
+  "  jano update           Update jano",
+];
+
 // --version flag
 if (args.includes("--version") || args.includes("-v")) {
   console.log(`jano v${VERSION}`);
+  process.exit(0);
+}
+
+// --help flag
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`jano v${VERSION} - Terminal editor
+
+Usage: jano [options] [file]
+
+Options:
+  -v, --version        Show version
+  --debug              Enable debug mode
+  -h, --help           Show this help
+
+Commands:
+${CLI_COMMANDS.join("\n")}`);
   process.exit(0);
 }
 

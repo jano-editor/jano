@@ -16,6 +16,7 @@ import { handleKey, type HandleKeyResult } from "./input.ts";
 import { render, getViewDimensions } from "./render.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths } from "./plugins/config.ts";
+import { CLI_COMMANDS } from "./cli.ts";
 import type { LanguagePlugin } from "./plugins/types.ts";
 import { createValidator } from "./validator.ts";
 
@@ -427,14 +428,7 @@ async function showHelp() {
     "  Esc           Clear Multi-Cursor",
     "",
     "CLI Commands:",
-    "  jano <file>           Open file",
-    "  jano                  New file",
-    "  jano --version        Show version",
-    "  jano plugin list      Installed plugins",
-    "  jano plugin search    Browse store",
-    "  jano plugin install   Install plugin",
-    "  jano plugin remove    Remove plugin",
-    "  jano update           Update jano",
+    ...CLI_COMMANDS,
   ].join("\n");
 
   await showDialog(
