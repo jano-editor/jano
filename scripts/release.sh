@@ -80,9 +80,20 @@ git tag "$TAG_NAME"
 
 echo "Created commit and tag: $TAG_NAME"
 
+# load token from .env if available
+if [ -z "$GH_TOKEN" ] && [ -f .env ]; then
+  source .env
+fi
+
 # push
-git push origin main
-git push origin "$TAG_NAME"
+if [ -n "$GH_TOKEN" ]; then
+  REMOTE="https://Flo0806:${GH_TOKEN}@github.com/jano-editor/jano.git"
+  git push "$REMOTE" main
+  git push "$REMOTE" "$TAG_NAME"
+else
+  git push origin main
+  git push origin "$TAG_NAME"
+fi
 
 echo ""
 echo "Done! GitHub Action will publish $NPM_NAME v$VERSION to npm."
