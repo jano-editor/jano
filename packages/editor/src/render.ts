@@ -16,6 +16,8 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
     ["^V", "Paste"],
     ["^F", "Search"],
     ["^G", "Go to"],
+    ["^D", "Next"],
+    ["F2", "History"],
   ];
   const isWindows = process.platform === "win32" || !!process.env["WSL_DISTRO_NAME"];
   list.push([isWindows ? "^⌥↕" : "^⇧↕", "Multi"]);
@@ -28,18 +30,51 @@ function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   return list;
 }
 
+// width reserved on the right side for the F9 ⚙ entry (always shown)
+// matches the actual entry width used in render: "F9" + " " + 2 cells for emoji + 1 padding
+const SETTINGS_ENTRY_W = 6;
+
+// the X coordinate where the F9 ⚙ entry starts (last cell - settingsEntryW)
+function getSettingsX(screenW: number): number {
+  return screenW - SETTINGS_ENTRY_W - 1;
+}
+
+// the rightmost column available for left-aligned shortcuts on the last help row
+function getLeftLimit(screenW: number): number {
+  return getSettingsX(screenW) - 1;
+}
+
+// returns the number of help rows (1 or 2) needed to fit all shortcuts
+function calculateHelpRows(screenW: number, plugin: LanguagePlugin | null): 1 | 2 {
+  const sc = getShortcuts(plugin);
+  const limit = getLeftLimit(screenW);
+  let helpX = 1;
+  for (const [key, label] of sc) {
+    const entryWidth = key.length + label.length + 3;
+    if (helpX + entryWidth > limit) return 2;
+    helpX += entryWidth;
+  }
+  return 1;
+}
+
 export function gutterWidth(lineCount: number): number {
   if (!getEditorSettings().lineNumbers) return 0;
   return String(lineCount).length + 1;
 }
 
-export function getViewDimensions(screen: Screen, lineCount: number) {
+export function getViewDimensions(
+  screen: Screen,
+  lineCount: number,
+  plugin: LanguagePlugin | null = null,
+) {
   const gw = gutterWidth(lineCount);
+  const helpRows = calculateHelpRows(screen.width, plugin);
   const contentTop = 1;
-  const contentBottom = screen.height - 4;
+  // bottom area: status bar + bottom border + N help rows
+  const contentBottom = screen.height - 3 - helpRows;
   const viewH = contentBottom - contentTop + 1;
   const viewW = screen.width - 2 - gw;
-  return { gw, contentTop, viewH, viewW };
+  return { gw, contentTop, viewH, viewW, helpRows };
 }
 
 export function render(
@@ -55,10 +90,22 @@ export function render(
 
   const w = screen.width;
   const h = screen.height;
-  const { gw, contentTop, viewH, viewW } = getViewDimensions(screen, editor.lines.length);
+  const { gw, contentTop, viewH, viewW, helpRows } = getViewDimensions(
+    screen,
+    editor.lines.length,
+    plugin,
+  );
+
+  // bottom row positions
+  // layout (bottom-up): help row(s), bottom border, status bar, content
+  const lastHelpY = h - 1;
+  const firstHelpY = h - helpRows;
+  const bottomBorderY = firstHelpY - 1; // bottom edge of the rect
+  const statusY = bottomBorderY - 1;
+  const rectHeight = bottomBorderY + 1; // rect spans rows 0..bottomBorderY
 
   // outer border
-  draw.rect(0, 0, w, h - 1, { fg: [55, 60, 70], border: "round" });
+  draw.rect(0, 0, w, rectHeight, { fg: [55, 60, 70], border: "round" });
 
   // title bar background
   for (let x = 1; x < w - 1; x++) {
@@ -162,17 +209,15 @@ export function render(
     const scrollRatio = cm.scrollX / (maxLineLen - viewW);
     const thumbSize = Math.max(2, Math.round(viewW * (viewW / maxLineLen)));
     const thumbPos = Math.round(scrollRatio * (viewW - thumbSize));
-    const barY = h - 2; // bottom border line
     for (let x = 0; x < viewW; x++) {
       if (x >= thumbPos && x < thumbPos + thumbSize) {
-        draw.char(1 + gw + x, barY, "━", { fg: [140, 140, 140] });
+        draw.char(1 + gw + x, bottomBorderY, "━", { fg: [140, 140, 140] });
       }
     }
   }
 
   // status bar
   const p = cm.primary;
-  const statusY = h - 3;
   // fill status bar background
   for (let x = 1; x < w - 1; x++) {
     draw.char(x, statusY, " ", { bg: [45, 50, 60] });
@@ -219,37 +264,63 @@ export function render(
     });
   }
 
-  // shortcut help — fit as many as possible, truncate rest
-  const helpY = h - 1;
+  // shortcut help — fill 1 or 2 rows
   const sc = getShortcuts(plugin);
-  for (let x = 0; x < w; x++) {
-    draw.char(x, helpY, " ", { bg: [35, 38, 45] });
+  // clear all help rows
+  for (let row = firstHelpY; row <= lastHelpY; row++) {
+    for (let x = 0; x < w; x++) {
+      draw.char(x, row, " ", { bg: [35, 38, 45] });
+    }
   }
 
-  // right-aligned: F9 settings (always visible)
+  // right-aligned: F9 settings (always visible, on the last help row)
   const settingsKey = "F9";
   const settingsLabel = "⚙";
-  // emoji takes 2 cells in most terminals
-  const settingsEntryW = settingsKey.length + 1 + 2 + 1;
-  const settingsX = w - settingsEntryW - 1;
-  draw.text(settingsX, helpY, settingsKey, { fg: [220, 220, 220], bg: [60, 65, 75] });
-  draw.text(settingsX + settingsKey.length, helpY, ` ${settingsLabel}`, {
+  const settingsX = getSettingsX(w);
+  draw.text(settingsX, lastHelpY, settingsKey, { fg: [220, 220, 220], bg: [60, 65, 75] });
+  draw.text(settingsX + settingsKey.length, lastHelpY, ` ${settingsLabel}`, {
     fg: [120, 125, 135],
     bg: [35, 38, 45],
   });
 
-  // left-aligned shortcuts, stop before settings
-  const leftLimit = settingsX - 1;
+  // left-aligned shortcuts, wrap to second row if needed
+  // first row uses the full width minus the settings entry only on the last row
+  let curRow = firstHelpY;
   let helpX = 1;
   for (let i = 0; i < sc.length; i++) {
     const [key, label] = sc[i];
     const entryWidth = key.length + label.length + 3;
-    if (helpX + entryWidth > leftLimit) break; // stop if no room
-    draw.text(helpX, helpY, key, { fg: [220, 220, 220], bg: [60, 65, 75] });
-    draw.text(helpX + key.length, helpY, ` ${label}`, { fg: [120, 125, 135], bg: [35, 38, 45] });
+    // limit depends on whether this row is the last one (where settings sits)
+    const isLastRow = curRow === lastHelpY;
+    const limit = isLastRow ? settingsX - 1 : w - 1;
+
+    // wrap to next row if no more space
+    if (helpX + entryWidth > limit) {
+      if (curRow < lastHelpY) {
+        curRow++;
+        helpX = 1;
+        // recompute limit for the new row
+        const newLimit = curRow === lastHelpY ? settingsX - 1 : w - 1;
+        if (helpX + entryWidth > newLimit) break; // still doesn't fit, stop
+      } else {
+        break; // last row full, stop
+      }
+    }
+
+    draw.text(helpX, curRow, key, { fg: [220, 220, 220], bg: [60, 65, 75] });
+    draw.text(helpX + key.length, curRow, ` ${label}`, {
+      fg: [120, 125, 135],
+      bg: [35, 38, 45],
+    });
     helpX += entryWidth;
-    if (i < sc.length - 1 && helpX < leftLimit) {
-      draw.text(helpX - 1, helpY, "│", { fg: [55, 58, 65], bg: [35, 38, 45] });
+
+    // separator before next entry (only if it stays on this row)
+    if (i < sc.length - 1) {
+      const isLast = curRow === lastHelpY;
+      const lim = isLast ? settingsX - 1 : w - 1;
+      if (helpX < lim) {
+        draw.text(helpX - 1, curRow, "│", { fg: [55, 58, 65], bg: [35, 38, 45] });
+      }
     }
   }
 
