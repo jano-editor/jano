@@ -48,23 +48,6 @@
 - [ ] `jano plugin install <name>` (needs registry server)
 - [ ] Plugin update check (needs endpoint)
 
-## TODO Beat Micro
-
-Plan to make jano competitive with the [micro editor](https://github.com/zyedidia/micro). Micro is more mature today; jano's edge has to be a TS/JS plugin system that feels like writing a VSCode extension. Architecture and modern stack vs. micro's Go advantage.
-
-Ordered by impact / effort:
-
-- [x] **Mouse support** — drag to select, double-click word, triple-click line, click to position cursor, auto-scroll at edges, focus-out detection.
-- [ ] **Splits + tabs** — multiple buffers visible at once, vertical/horizontal splits. Micro's killer feature for real coding.
-- [ ] **More language plugins** — JavaScript, TypeScript, Python, Go, Rust, Bash, Dockerfile, TOML, HTML, CSS. Easy wins with existing plugin system.
-- [ ] **Autocompletion** — plugin-driven, plugins return completion candidates via a new hook.
-- [ ] **Theme system** — already planned in #3, do this alongside settings dialog work.
-- [ ] **Diff gutter** — git status per line, modified/added/removed markers in the gutter.
-- [ ] **Persistent undo** — serialize undo history to disk, restore on file open.
-- [ ] **Built-in terminal pane** — like micro's terminal split, optional.
-- [ ] **Macros** — record + replay key sequences.
-- [ ] **130+ language definitions OOTB** — bundle a curated set of basic plugins so jano works out of the box.
-
 ### Done
 
 - [x] File open, edit, save (Ctrl+S)
