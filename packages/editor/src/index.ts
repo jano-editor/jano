@@ -79,9 +79,9 @@ function renderView() {
 const KIND_ICONS: Record<string, string> = {
   keyword: "◆",
   function: "ƒ",
-  variable: "𝑥",
+  variable: "χ",
   property: "◇",
-  type: "𝑇",
+  type: "◈",
   constant: "●",
   snippet: "✦",
   text: "≡",
