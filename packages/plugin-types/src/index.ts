@@ -135,6 +135,25 @@ export interface Diagnostic {
   message: string;
 }
 
+// ----- Completion -----
+
+export type CompletionKind =
+  | "keyword"
+  | "function"
+  | "variable"
+  | "property"
+  | "type"
+  | "constant"
+  | "snippet"
+  | "text";
+
+export interface CompletionItem {
+  label: string;
+  insertText?: string;
+  detail?: string;
+  kind?: CompletionKind;
+}
+
 // ----- Plugin Interface -----
 
 export interface LanguagePlugin {
@@ -171,4 +190,7 @@ export interface LanguagePlugin {
   // validate document content — called async, debounced
   // return diagnostics (errors, warnings) for the editor to display
   onValidate?(lines: readonly string[]): Diagnostic[];
+
+  // return completion candidates at the current cursor position
+  onComplete?(context: PluginContext): CompletionItem[] | null;
 }
