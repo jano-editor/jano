@@ -3,9 +3,9 @@ import { createScreen, createDraw } from "@jano-editor/ui";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
-import { parseKey, type KeyEvent } from "./keypress.ts";
+import { parseKey, parseMouse, type KeyEvent, type MouseEvent } from "./keypress.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
-import { render, getViewDimensions } from "./render.ts";
+import { render, getViewDimensions, gutterWidth } from "./render.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths } from "./plugins/config.ts";
 import { createValidator } from "./validator.ts";
@@ -44,13 +44,8 @@ const session: Session = {
   reloadPlugin,
 };
 
-function update() {
-  const { viewW, viewH } = getViewDimensions(
-    session.screen,
-    session.editor.lines.length,
-    session.plugin,
-  );
-  session.cm.ensureVisible(viewW, viewH);
+// render only — no cursor clamping, no validation. Used by mouse scroll and validator refresh.
+function renderView() {
   render(
     session.screen,
     session.draw,
@@ -60,7 +55,17 @@ function update() {
     session.pluginVersion,
     session.validator.state.diagnostics,
   );
-  // validator decides internally if content changed — debounced, no re-render loop
+}
+
+// full update: clamp cursor into viewport, render, schedule validation
+function update() {
+  const { viewW, viewH } = getViewDimensions(
+    session.screen,
+    session.editor.lines.length,
+    session.plugin,
+  );
+  session.cm.ensureVisible(viewW, viewH);
+  renderView();
   session.validator.schedule(session.editor.lines);
 }
 
@@ -73,7 +78,7 @@ function reloadPlugin() {
     session.pluginVersion = undefined;
   }
   session.validator = createValidator(session.plugin, () => {
-    if (!session.dialogOpen) update();
+    if (!session.dialogOpen) renderView();
   });
 }
 
@@ -82,7 +87,6 @@ function log(msg: string) {
   if (debug) console.log(msg);
 }
 
-// init
 async function start() {
   const paths = getPaths();
   log(`[jano] v${process.env.JANO_VERSION || "dev"}`);
@@ -143,8 +147,59 @@ function makePasteKey(text: string): KeyEvent {
   };
 }
 
+function handleMouse(event: MouseEvent) {
+  const { viewH } = getViewDimensions(session.screen, session.editor.lines.length, session.plugin);
+
+  if (event.type === "click") {
+    const gw = gutterWidth(session.editor.lines.length);
+    const contentTop = 1;
+    const editorY = event.y - contentTop + session.cm.scrollY;
+    const editorX = event.x - 1 - gw + session.cm.scrollX;
+
+    if (event.y >= contentTop && event.y < contentTop + viewH && event.x > gw) {
+      session.cm.clearExtras();
+      session.cm.primary.anchor = null;
+      session.cm.primary.y = Math.min(editorY, session.editor.lines.length - 1);
+      session.cm.primary.x = Math.min(
+        Math.max(0, editorX),
+        session.editor.lines[session.cm.primary.y].length,
+      );
+      update();
+    }
+    return;
+  }
+
+  const maxScrollY = Math.max(0, session.editor.lines.length - viewH);
+
+  switch (event.type) {
+    case "scroll-up":
+      session.cm.scrollY = Math.max(0, session.cm.scrollY - 3);
+      break;
+    case "scroll-down":
+      session.cm.scrollY = Math.min(maxScrollY, session.cm.scrollY + 3);
+      break;
+    case "scroll-left":
+      session.cm.scrollX = Math.max(0, session.cm.scrollX - 3);
+      break;
+    case "scroll-right":
+      session.cm.scrollX += 3;
+      break;
+  }
+  renderView();
+}
+
 process.stdin.on("data", (data) => {
   if (session.dialogOpen) return;
+
+  // mouse events (SGR: ESC [ <, X10: ESC [ M)
+  const mouse =
+    data[0] === 0x1b && data[1] === 0x5b && (data[2] === 0x3c || data[2] === 0x4d)
+      ? parseMouse(data)
+      : null;
+  if (mouse) {
+    handleMouse(mouse);
+    return;
+  }
 
   const str = data.toString("utf8");
 
@@ -161,7 +216,7 @@ process.stdin.on("data", (data) => {
     return dispatch(makePasteKey(text));
   }
   if (str.startsWith("\x1b[200~")) {
-    const content = str.slice(6); // "\x1b[200~".length === 6
+    const content = str.slice(6);
     const endIdx = content.indexOf("\x1b[201~");
     if (endIdx === -1) {
       pasteBuffer = content;
