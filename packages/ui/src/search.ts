@@ -381,7 +381,14 @@ export function showSearch(
     layer.on("mouse:drag", () => true);
     layer.on("mouse:release", () => true);
     layer.on("mouse:scroll", () => true);
-    layer.on("paste", () => true);
+    layer.on("paste", (event) => {
+      const text = getActiveText();
+      const cx = getActiveCursorX();
+      setActiveText(text.substring(0, cx) + event.text + text.substring(cx));
+      setActiveCursorX(cx + event.text.length);
+      renderSearch();
+      return true;
+    });
 
     renderSearch();
   });

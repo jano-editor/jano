@@ -401,8 +401,10 @@ export function createInputManager(): InputManager {
       const endIdx = pasteBuffer.indexOf(pasteEnd);
       if (endIdx === -1) return;
       const text = pasteBuffer.subarray(0, endIdx).toString("utf8");
+      const remaining = pasteBuffer.subarray(endIdx + pasteEnd.length);
       pasteBuffer = null;
       emit("paste", { text });
+      if (remaining.length > 0) onData(remaining);
       return;
     }
     if (data.length >= 6 && pasteStart.every((b, i) => data[i] === b)) {
@@ -413,6 +415,8 @@ export function createInputManager(): InputManager {
         return;
       }
       emit("paste", { text: content.subarray(0, endIdx).toString("utf8") });
+      const remaining = content.subarray(endIdx + pasteEnd.length);
+      if (remaining.length > 0) onData(remaining);
       return;
     }
 

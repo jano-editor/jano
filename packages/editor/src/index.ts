@@ -313,6 +313,8 @@ editorLayer.on("shortcut", (event) => {
     case "settings":
       void showSettings(session);
       break;
+    default:
+      return false; // unknown action — let key event pass through
   }
   return true;
 });
@@ -500,6 +502,11 @@ async function start() {
   if (filePath) {
     reloadPlugin();
     if (session.plugin) log(`[jano] language: ${session.plugin.name}`);
+  }
+
+  if (!process.stdin.isTTY) {
+    console.error("[jano] Not a terminal. jano requires an interactive TTY.");
+    process.exit(1);
   }
 
   screen.enter();

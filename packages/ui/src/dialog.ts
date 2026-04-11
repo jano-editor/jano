@@ -235,7 +235,15 @@ export function showDialog(
     layer.on("mouse:drag", () => true);
     layer.on("mouse:release", () => true);
     layer.on("mouse:scroll", () => true);
-    layer.on("paste", () => true);
+    layer.on("paste", (event) => {
+      if (hasInput && !buttonsActive) {
+        inputText =
+          inputText.substring(0, inputCursorX) + event.text + inputText.substring(inputCursorX);
+        inputCursorX += event.text.length;
+        renderDialog();
+      }
+      return true;
+    });
 
     renderDialog();
   });
