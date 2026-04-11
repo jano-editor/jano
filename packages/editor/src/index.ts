@@ -125,6 +125,7 @@ void start();
 let pasteBuffer: string | null = null;
 
 function dispatch(key: KeyEvent) {
+  stopAutoScroll();
   const result = handleKey(
     key,
     session.editor,
@@ -151,11 +152,24 @@ let lastClickTime = 0;
 let lastClickX = -1;
 let lastClickY = -1;
 let clickCount = 0;
+let autoScrollTimer: ReturnType<typeof setInterval> | null = null;
+let autoScrollDY = 0;
+let autoScrollDX = 0;
+
+function stopAutoScroll() {
+  if (autoScrollTimer) {
+    clearInterval(autoScrollTimer);
+    autoScrollTimer = null;
+  }
+  autoScrollDY = 0;
+  autoScrollDX = 0;
+}
 
 function handleMouse(event: MouseEvent) {
   const { viewH } = getViewDimensions(session.screen, session.editor.lines.length, session.plugin);
 
   if (event.type === "click") {
+    stopAutoScroll();
     const gw = gutterWidth(session.editor.lines.length);
     const contentTop = 1;
     const editorY = Math.min(
@@ -215,6 +229,62 @@ function handleMouse(event: MouseEvent) {
     return;
   }
 
+  if (event.type === "drag") {
+    const gw = gutterWidth(session.editor.lines.length);
+    const contentTop = 1;
+    const maxLine = session.editor.lines.length - 1;
+
+    const atTop = event.y < contentTop;
+    const atBottom = event.y >= contentTop + viewH;
+    const atLeft = event.x <= gw;
+    const atRight = event.x >= session.screen.width - 1;
+
+    // update auto-scroll direction
+    autoScrollDY = atTop ? -1 : atBottom ? 1 : 0;
+    autoScrollDX = atLeft ? -1 : atRight ? 1 : 0;
+
+    if (autoScrollDY !== 0 || autoScrollDX !== 0) {
+      // start auto-scroll if not already running
+      if (!autoScrollTimer) {
+        autoScrollTimer = setInterval(() => {
+          const maxSY = Math.max(0, session.editor.lines.length - viewH);
+          if (autoScrollDY < 0) session.cm.scrollY = Math.max(0, session.cm.scrollY - 1);
+          if (autoScrollDY > 0) session.cm.scrollY = Math.min(maxSY, session.cm.scrollY + 1);
+          if (autoScrollDX < 0) session.cm.scrollX = Math.max(0, session.cm.scrollX - 1);
+          if (autoScrollDX > 0) session.cm.scrollX += 1;
+          // move cursor with the scroll
+          const p = session.cm.primary;
+          if (autoScrollDY !== 0) {
+            p.y = Math.min(Math.max(0, p.y + autoScrollDY), maxLine);
+          }
+          if (autoScrollDX !== 0) {
+            p.x += autoScrollDX;
+          }
+          p.x = Math.min(Math.max(0, p.x), session.editor.lines[p.y]?.length ?? 0);
+          renderView();
+        }, 50);
+      }
+      // safety: stop if no drag events for 2s (mouse left terminal)
+    } else {
+      // back in content area → stop auto-scroll
+      stopAutoScroll();
+    }
+
+    // always update cursor to current mouse position
+    const editorY = Math.min(Math.max(0, event.y - contentTop + session.cm.scrollY), maxLine);
+    const editorX = Math.min(
+      Math.max(0, event.x - 1 - gw + session.cm.scrollX),
+      session.editor.lines[editorY]?.length ?? 0,
+    );
+
+    const p = session.cm.primary;
+    if (!p.anchor) p.anchor = { x: p.x, y: p.y };
+    p.y = editorY;
+    p.x = editorX;
+    renderView();
+    return;
+  }
+
   const maxScrollY = Math.max(0, session.editor.lines.length - viewH);
 
   switch (event.type) {
@@ -236,6 +306,17 @@ function handleMouse(event: MouseEvent) {
 
 process.stdin.on("data", (data) => {
   if (session.dialogOpen) return;
+
+  // focus in/out (ESC [ I / ESC [ O) — stop auto-scroll on focus loss
+  if (
+    data[0] === 0x1b &&
+    data[1] === 0x5b &&
+    (data[2] === 0x49 || data[2] === 0x4f) &&
+    data.length === 3
+  ) {
+    stopAutoScroll();
+    return;
+  }
 
   // mouse events (SGR: ESC [ <, X10: ESC [ M)
   const mouse =

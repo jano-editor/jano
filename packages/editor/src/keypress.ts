@@ -7,7 +7,7 @@ export interface KeyEvent {
 }
 
 export interface MouseEvent {
-  type: "scroll-up" | "scroll-down" | "scroll-left" | "scroll-right" | "click";
+  type: "scroll-up" | "scroll-down" | "scroll-left" | "scroll-right" | "click" | "drag";
   x: number;
   y: number;
 }
@@ -53,6 +53,8 @@ function mouseFromButton(
   switch (button) {
     case 0:
       return pressed ? { type: "click", x, y } : null;
+    case 32:
+      return { type: "drag", x, y };
     case 64:
       return { type: "scroll-up", x, y };
     case 65:

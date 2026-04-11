@@ -29,13 +29,15 @@ export function createScreen(stream: WriteStream = process.stdout as WriteStream
       write(`${ESC}[?1049h`); // alternate buffer
       write(`${ESC}[?25l`); // hide cursor
       write(`${ESC}[?2004h`); // enable bracketed paste
-      write(`${ESC}[?1000h`); // enable mouse tracking (clicks + scroll)
+      write(`${ESC}[?1002h`); // enable mouse tracking (clicks + scroll + drag)
       write(`${ESC}[?1006h`); // SGR extended mouse encoding
+      write(`${ESC}[?1004h`); // enable focus events
     },
 
     leave() {
+      write(`${ESC}[?1004l`); // disable focus events
       write(`${ESC}[?1006l`); // disable SGR extended mouse
-      write(`${ESC}[?1000l`); // disable mouse tracking
+      write(`${ESC}[?1002l`); // disable mouse tracking
       write(`${ESC}[?2004l`); // disable bracketed paste
       write(`${ESC}[?25h`); // show cursor
       write(`${ESC}[?1049l`); // restore buffer
