@@ -25,6 +25,15 @@ function stripControlChars(text: string): string {
 // copy to system clipboard (cross-platform)
 async function copyToSystemClipboard(text: string) {
   try {
+    // WSL: clip.exe mangles UTF-8, use PowerShell instead
+    if (process.env["WSL_DISTRO_NAME"]) {
+      const { execSync } = await import("node:child_process");
+      const escaped = text.replace(/'/g, "''");
+      execSync(`powershell.exe -NoProfile -Command "Set-Clipboard -Value '${escaped}'"`, {
+        timeout: 3000,
+      });
+      return;
+    }
     const { default: clipboardy } = await import("clipboardy");
     await clipboardy.write(text);
   } catch {

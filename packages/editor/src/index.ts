@@ -156,7 +156,7 @@ async function start() {
 
 void start();
 
-let pasteBuffer: string | null = null;
+let pasteBuffer: Buffer | null = null;
 
 function openCompletion() {
   const p = session.cm.primary;
@@ -509,28 +509,26 @@ process.stdin.on("data", (data) => {
     return;
   }
 
-  const str = data.toString("utf8");
+  // bracketed paste: accumulate raw buffers, decode only when complete
+  const pasteStart = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]; // ESC[200~
+  const pasteEnd = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]; // ESC[201~
 
-  // bracketed paste: buffer chunks between ESC[200~ and ESC[201~
   if (pasteBuffer !== null) {
-    const endIdx = str.indexOf("\x1b[201~");
-    if (endIdx === -1) {
-      pasteBuffer += str;
-      return;
-    }
-    pasteBuffer += str.slice(0, endIdx);
-    const text = pasteBuffer;
+    pasteBuffer = Buffer.concat([pasteBuffer, data]);
+    const endIdx = pasteBuffer.indexOf(Buffer.from(pasteEnd));
+    if (endIdx === -1) return;
+    const text = pasteBuffer.subarray(0, endIdx).toString("utf8");
     pasteBuffer = null;
     return dispatch(makePasteKey(text));
   }
-  if (str.startsWith("\x1b[200~")) {
-    const content = str.slice(6);
-    const endIdx = content.indexOf("\x1b[201~");
+  if (data.length >= 6 && pasteStart.every((b, i) => data[i] === b)) {
+    const content = data.subarray(6);
+    const endIdx = content.indexOf(Buffer.from(pasteEnd));
     if (endIdx === -1) {
-      pasteBuffer = content;
+      pasteBuffer = Buffer.from(content);
       return;
     }
-    return dispatch(makePasteKey(content.slice(0, endIdx)));
+    return dispatch(makePasteKey(content.subarray(0, endIdx).toString("utf8")));
   }
 
   dispatch(parseKey(data));
