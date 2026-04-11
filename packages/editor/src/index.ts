@@ -76,6 +76,21 @@ function renderView() {
   renderCompletionPopup();
 }
 
+const KIND_ICONS: Record<string, string> = {
+  keyword: "◆",
+  function: "ƒ",
+  variable: "𝑥",
+  property: "◇",
+  type: "𝑇",
+  constant: "●",
+  snippet: "✦",
+  text: "≡",
+};
+
+function kindIcon(kind: string): string {
+  return KIND_ICONS[kind] ?? kind.charAt(0);
+}
+
 function renderCompletionPopup() {
   if (!comp.active || comp.filtered.length === 0) return;
   const gw = gutterWidth(editor.lines.length);
@@ -87,7 +102,7 @@ function renderCompletionPopup() {
     screenH: screen.height,
     items: comp.filtered.map((c) => ({
       label: c.label,
-      detail: c.kind ? c.kind.substring(0, 3) : undefined,
+      detail: c.kind ? kindIcon(c.kind) : undefined,
     })),
     selectedIndex: comp.selectedIndex,
     scrollOffset: comp.scrollOffset,
