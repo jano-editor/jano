@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseKey } from "../keypress.ts";
+import { parseKey, parseMouse } from "../keypress.ts";
 
 describe("parseKey", () => {
   it("parses regular characters", () => {
@@ -79,5 +79,116 @@ describe("parseKey", () => {
     const key = parseKey(Buffer.from("ü"));
     expect(key.name).toBe("ü");
     expect(key.ctrl).toBe(false);
+  });
+
+  it("parses F9", () => {
+    const key = parseKey(Buffer.from("\x1b[20~"));
+    expect(key.name).toBe("f9");
+  });
+});
+
+describe("parseMouse", () => {
+  describe("SGR extended format", () => {
+    it("parses left click (button 0 press)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<0;15;10M"));
+      expect(event).toEqual({ type: "click", x: 14, y: 9 });
+    });
+
+    it("parses left click release", () => {
+      const event = parseMouse(Buffer.from("\x1b[<0;15;10m"));
+      expect(event).toEqual({ type: "release", x: 14, y: 9 });
+    });
+
+    it("parses drag (button 32)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<32;20;5M"));
+      expect(event).toEqual({ type: "drag", x: 19, y: 4 });
+    });
+
+    it("parses scroll up (button 64)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<64;10;5M"));
+      expect(event).toEqual({ type: "scroll-up", x: 9, y: 4 });
+    });
+
+    it("parses scroll down (button 65)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<65;10;5M"));
+      expect(event).toEqual({ type: "scroll-down", x: 9, y: 4 });
+    });
+
+    it("parses shift+scroll up as scroll-left (button 68)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<68;10;5M"));
+      expect(event).toEqual({ type: "scroll-left", x: 9, y: 4 });
+    });
+
+    it("parses shift+scroll down as scroll-right (button 69)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<69;10;5M"));
+      expect(event).toEqual({ type: "scroll-right", x: 9, y: 4 });
+    });
+
+    it("parses ctrl+scroll up as scroll-left (button 80)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<80;10;5M"));
+      expect(event).toEqual({ type: "scroll-left", x: 9, y: 4 });
+    });
+
+    it("parses ctrl+scroll down as scroll-right (button 81)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<81;10;5M"));
+      expect(event).toEqual({ type: "scroll-right", x: 9, y: 4 });
+    });
+
+    it("converts 1-based coords to 0-based", () => {
+      const event = parseMouse(Buffer.from("\x1b[<0;1;1M"));
+      expect(event).toEqual({ type: "click", x: 0, y: 0 });
+    });
+
+    it("handles large coordinates", () => {
+      const event = parseMouse(Buffer.from("\x1b[<0;200;50M"));
+      expect(event).toEqual({ type: "click", x: 199, y: 49 });
+    });
+
+    it("returns null for unknown button", () => {
+      const event = parseMouse(Buffer.from("\x1b[<99;10;5M"));
+      expect(event).toBeNull();
+    });
+
+    it("returns null for right click (button 2)", () => {
+      const event = parseMouse(Buffer.from("\x1b[<2;10;5M"));
+      expect(event).toBeNull();
+    });
+  });
+
+  describe("X10 format", () => {
+    it("parses scroll up", () => {
+      // button 64: Cb = 64+32 = 96, x=9(0-based): Cx = 9+33 = 42, y=4: Cy = 4+33 = 37
+      const event = parseMouse(Buffer.from([0x1b, 0x5b, 0x4d, 96, 42, 37]));
+      expect(event).toEqual({ type: "scroll-up", x: 9, y: 4 });
+    });
+
+    it("parses left click", () => {
+      // button 0: Cb = 0+32 = 32, x=0: Cx = 0+33 = 33, y=0: Cy = 0+33 = 33
+      const event = parseMouse(Buffer.from([0x1b, 0x5b, 0x4d, 32, 33, 33]));
+      expect(event).toEqual({ type: "click", x: 0, y: 0 });
+    });
+  });
+
+  describe("invalid input", () => {
+    it("returns null for non-escape data", () => {
+      expect(parseMouse(Buffer.from("hello"))).toBeNull();
+    });
+
+    it("returns null for keyboard escape sequences", () => {
+      expect(parseMouse(Buffer.from("\x1b[A"))).toBeNull();
+    });
+
+    it("returns null for incomplete SGR sequence", () => {
+      expect(parseMouse(Buffer.from("\x1b[<0;10"))).toBeNull();
+    });
+
+    it("returns null for NaN coordinates in SGR", () => {
+      expect(parseMouse(Buffer.from("\x1b[<0;abc;5M"))).toBeNull();
+    });
+
+    it("returns null for negative X10 coordinates", () => {
+      // Cx = 10 → x = 10-33 = -23 → rejected
+      expect(parseMouse(Buffer.from([0x1b, 0x5b, 0x4d, 32, 10, 33]))).toBeNull();
+    });
   });
 });

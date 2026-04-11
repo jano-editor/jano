@@ -327,9 +327,16 @@ export function render(
   screen.hideCursor();
   draw.flush();
 
-  // position terminal cursor on primary
+  // position terminal cursor on primary (only if visible in viewport)
   const screenCursorX = 1 + gw + (p.x - cm.scrollX);
   const screenCursorY = contentTop + (p.y - cm.scrollY);
-  screen.moveTo(screenCursorX, screenCursorY);
-  screen.showCursor();
+  if (
+    screenCursorY >= contentTop &&
+    screenCursorY < contentTop + viewH &&
+    screenCursorX >= 1 + gw &&
+    screenCursorX < 1 + gw + viewW
+  ) {
+    screen.moveTo(screenCursorX, screenCursorY);
+    screen.showCursor();
+  }
 }

@@ -6,6 +6,79 @@ export interface KeyEvent {
   raw: Buffer;
 }
 
+export interface MouseEvent {
+  type: "scroll-up" | "scroll-down" | "scroll-left" | "scroll-right" | "click" | "drag" | "release";
+  x: number;
+  y: number;
+}
+
+export function parseMouse(data: Buffer): MouseEvent | null {
+  if (data[0] !== 0x1b || data[1] !== 0x5b) return null;
+
+  // SGR extended: ESC [ < button ; x ; y M (press) / m (release)
+  if (data[2] === 0x3c) {
+    const last = data[data.length - 1];
+    if (last !== 0x4d && last !== 0x6d) return null;
+    const pressed = last === 0x4d;
+
+    const params = data.toString("utf8", 3, data.length - 1);
+    const parts = params.split(";");
+    if (parts.length !== 3) return null;
+
+    const button = parseInt(parts[0], 10);
+    const x = parseInt(parts[1], 10) - 1;
+    const y = parseInt(parts[2], 10) - 1;
+
+    if (!Number.isFinite(button) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || y < 0) return null;
+
+    return mouseFromButton(button, x, y, pressed);
+  }
+
+  // X10 / normal: ESC [ M Cb Cx Cy (6 bytes total)
+  if (data[2] === 0x4d && data.length === 6) {
+    const button = data[3] - 32;
+    const x = data[4] - 33;
+    const y = data[5] - 33;
+
+    if (button < 0 || x < 0 || y < 0) return null;
+
+    return mouseFromButton(button, x, y, true);
+  }
+
+  return null;
+}
+
+function mouseFromButton(
+  button: number,
+  x: number,
+  y: number,
+  pressed: boolean,
+): MouseEvent | null {
+  switch (button) {
+    case 0:
+      return { type: pressed ? "click" : "release", x, y };
+    case 32:
+      return { type: "drag", x, y };
+    case 64:
+      return { type: "scroll-up", x, y };
+    case 65:
+      return { type: "scroll-down", x, y };
+    // shift+scroll = horizontal scroll (shift adds +4 to button value)
+    case 68:
+      return { type: "scroll-left", x, y };
+    case 69:
+      return { type: "scroll-right", x, y };
+    // ctrl+scroll = horizontal scroll fallback (ctrl adds +16)
+    case 80:
+      return { type: "scroll-left", x, y };
+    case 81:
+      return { type: "scroll-right", x, y };
+    default:
+      return null;
+  }
+}
+
 export function parseKey(data: Buffer): KeyEvent {
   const key: KeyEvent = { name: "", ctrl: false, shift: false, alt: false, raw: data };
 
