@@ -258,46 +258,64 @@ function dispatch(key: KeyEvent) {
 }
 
 function handleResult(result: HandleKeyResult) {
-  switch (result) {
-    case "exit":
-      void confirmExit(session);
-      return;
-    case "help":
-      void showHelp(session);
-      return;
-    case "history":
-      void showHistory(session);
-      return;
-    case "search":
-      void openSearch(session);
-      return;
-    case "goto":
-      void openGoto(session);
-      return;
-    case "diagnostics":
-      void showDiagnostics(session);
-      return;
-    case "settings":
-      void showSettings(session);
-      return;
-    case "complete":
-      openCompletion();
-      return;
+  if (result === "complete") {
+    openCompletion();
+  } else {
+    update();
+  }
+}
+
+// ----- Shortcuts -----
+
+input.registerShortcut("ctrl+s", "save");
+input.registerShortcut("ctrl+q", "exit");
+input.registerShortcut("ctrl+f", "search");
+input.registerShortcut("ctrl+g", "goto");
+input.registerShortcut("f1", "help");
+input.registerShortcut("f2", "history");
+input.registerShortcut("f4", "diagnostics");
+input.registerShortcut("f9", "settings");
+
+// ----- Editor Layer: register all event handlers -----
+
+const editorLayer = input.pushLayer("editor");
+
+editorLayer.on("shortcut", (event) => {
+  cancelAutoComplete();
+  closeCompletion(comp);
+  stopAutoScroll();
+  switch (event.action) {
     case "save":
       if (editor.filePath) {
         void trySave(session, editor.filePath).then(() => update());
       } else {
         void saveWithDialog(session);
       }
-      return;
-    default:
-      update();
+      break;
+    case "exit":
+      void confirmExit(session);
+      break;
+    case "search":
+      void openSearch(session);
+      break;
+    case "goto":
+      void openGoto(session);
+      break;
+    case "help":
+      void showHelp(session);
+      break;
+    case "history":
+      void showHistory(session);
+      break;
+    case "diagnostics":
+      void showDiagnostics(session);
+      break;
+    case "settings":
+      void showSettings(session);
+      break;
   }
-}
-
-// ----- Editor Layer: register all event handlers -----
-
-const editorLayer = input.pushLayer("editor");
+  return true;
+});
 
 editorLayer.on("key", (key) => {
   dispatch(key);

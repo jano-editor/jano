@@ -18,8 +18,14 @@ export interface PasteEvent {
   text: string;
 }
 
+export interface ShortcutEvent {
+  action: string;
+  key: KeyEvent;
+}
+
 export type InputEventMap = {
   key: KeyEvent;
+  shortcut: ShortcutEvent;
   "mouse:click": MouseEvent;
   "mouse:release": MouseEvent;
   "mouse:drag": MouseEvent;
@@ -91,7 +97,7 @@ function mouseFromButton(
   }
 }
 
-function parseMouse(data: Buffer): MouseEvent | null {
+export function parseMouse(data: Buffer): MouseEvent | null {
   if (data[0] !== 0x1b || data[1] !== 0x5b) return null;
 
   // SGR extended: ESC [ < button ; x ; y M/m
@@ -124,7 +130,7 @@ function parseMouse(data: Buffer): MouseEvent | null {
 
 // ----- Key Parsing -----
 
-function parseKey(data: Buffer): KeyEvent {
+export function parseKey(data: Buffer): KeyEvent {
   const key: KeyEvent = { name: "", ctrl: false, shift: false, alt: false, raw: data };
 
   if (data.length === 1 && data[0] === 13) {
@@ -321,15 +327,31 @@ function parseKey(data: Buffer): KeyEvent {
 
 // ----- InputManager -----
 
+// ----- Shortcut Matching -----
+
+function keyToCombo(key: KeyEvent): string {
+  const parts: string[] = [];
+  if (key.ctrl) parts.push("ctrl");
+  if (key.alt) parts.push("alt");
+  if (key.shift) parts.push("shift");
+  parts.push(key.name);
+  return parts.join("+");
+}
+
 export interface InputManager {
   start(): void;
   stop(): void;
   pushLayer(name: string): InputLayer;
   popLayer(layer: InputLayer): void;
+  /** Register a keyboard shortcut. Combo format: "ctrl+s", "alt+up", "f9", etc. */
+  registerShortcut(combo: string, action: string): void;
+  /** Remove a registered shortcut. */
+  unregisterShortcut(combo: string): void;
 }
 
 export function createInputManager(): InputManager {
   const layers: LayerInternal[] = [];
+  const shortcuts = new Map<string, string>();
   let pasteBuffer: Buffer | null = null;
   let running = false;
 
@@ -396,6 +418,15 @@ export function createInputManager(): InputManager {
 
     // key events
     const key = parseKey(data);
+
+    // check shortcuts before emitting raw key
+    const combo = keyToCombo(key);
+    const action = shortcuts.get(combo);
+    if (action) {
+      const handled = emit("shortcut", { action, key });
+      if (handled) return;
+    }
+
     emit("key", key);
   }
 
@@ -427,6 +458,14 @@ export function createInputManager(): InputManager {
     popLayer(layer: InputLayer) {
       const idx = layers.indexOf(layer as LayerInternal);
       if (idx >= 0) layers.splice(idx, 1);
+    },
+
+    registerShortcut(combo: string, action: string) {
+      shortcuts.set(combo.toLowerCase(), action);
+    },
+
+    unregisterShortcut(combo: string) {
+      shortcuts.delete(combo.toLowerCase());
     },
   };
 }
