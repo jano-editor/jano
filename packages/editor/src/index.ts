@@ -1,12 +1,18 @@
 #!/usr/bin/env node
-import { createScreen, createDraw } from "@jano-editor/ui";
+import {
+  createScreen,
+  createDraw,
+  createInputManager,
+  drawPopup,
+  popupMoveUp,
+  popupMoveDown,
+  type KeyEvent,
+} from "@jano-editor/ui";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
-import { parseKey, parseMouse, type KeyEvent, type MouseEvent } from "./keypress.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
 import { render, getViewDimensions, gutterWidth } from "./render.ts";
-import { drawPopup, popupMoveUp, popupMoveDown } from "@jano-editor/ui";
 import {
   createCompletionState,
   closeCompletion,
@@ -35,6 +41,7 @@ const filePath = process.argv[2] || undefined;
 
 const screen = createScreen();
 const draw = createDraw(screen);
+const input = createInputManager();
 const editor = createEditor(filePath);
 const cm = createCursorManager();
 const undo = createUndoManager();
@@ -43,24 +50,25 @@ const comp = createCompletionState();
 const session: Session = {
   screen,
   draw,
+  input,
   editor,
   cm,
   undo,
   validator: createValidator(null),
   plugin: null,
   pluginVersion: undefined,
-  dialogOpen: false,
   update,
   reloadPlugin,
 };
 
-// render only — no cursor clamping, no validation. Used by mouse scroll and validator refresh.
+// ----- Rendering -----
+
 function renderView() {
   render(
-    session.screen,
-    session.draw,
-    session.editor,
-    session.cm,
+    screen,
+    draw,
+    editor,
+    cm,
     session.plugin,
     session.pluginVersion,
     session.validator.state.diagnostics,
@@ -70,17 +78,13 @@ function renderView() {
 
 function renderCompletionPopup() {
   if (!comp.active || comp.filtered.length === 0) return;
-
-  const gw = gutterWidth(session.editor.lines.length);
-  const p = session.cm.primary;
-  const cursorScreenX = 1 + gw + (p.x - session.cm.scrollX);
-  const cursorScreenY = 1 + (p.y - session.cm.scrollY);
-
-  drawPopup(session.draw, {
-    x: cursorScreenX,
-    y: cursorScreenY,
-    screenW: session.screen.width,
-    screenH: session.screen.height,
+  const gw = gutterWidth(editor.lines.length);
+  const p = cm.primary;
+  drawPopup(draw, {
+    x: 1 + gw + (p.x - cm.scrollX),
+    y: 1 + (p.y - cm.scrollY),
+    screenW: screen.width,
+    screenH: screen.height,
     items: comp.filtered.map((c) => ({
       label: c.label,
       detail: c.kind ? c.kind.substring(0, 3) : undefined,
@@ -88,163 +92,28 @@ function renderCompletionPopup() {
     selectedIndex: comp.selectedIndex,
     scrollOffset: comp.scrollOffset,
   });
-  session.draw.flush();
+  draw.flush();
 }
 
-// full update: clamp cursor into viewport, render, schedule validation
 function update() {
-  const { viewW, viewH } = getViewDimensions(
-    session.screen,
-    session.editor.lines.length,
-    session.plugin,
-  );
-  session.cm.ensureVisible(viewW, viewH);
+  const { viewW, viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
+  cm.ensureVisible(viewW, viewH);
   renderView();
-  session.validator.schedule(session.editor.lines);
+  session.validator.schedule(editor.lines);
 }
 
 function reloadPlugin() {
-  session.plugin = detectLanguage(session.editor.filePath);
+  session.plugin = detectLanguage(editor.filePath);
   if (session.plugin) {
     const loaded = getLoadedPlugins().find((p) => p.plugin === session.plugin);
     session.pluginVersion = loaded?.manifest.version;
   } else {
     session.pluginVersion = undefined;
   }
-  session.validator = createValidator(session.plugin, () => {
-    if (!session.dialogOpen) renderView();
-  });
+  session.validator = createValidator(session.plugin, () => renderView());
 }
 
-const debug = !!process.env.JANO_DEBUG;
-function log(msg: string) {
-  if (debug) console.log(msg);
-}
-
-async function start() {
-  const paths = getPaths();
-  log(`[jano] v${process.env.JANO_VERSION || "dev"}`);
-  log(`[jano] config: ${paths.config}`);
-  log(`[jano] plugins: ${paths.plugins}`);
-
-  const loadResult = await initPlugins();
-
-  log(`[jano] loaded ${loadResult.plugins.length} plugin(s)`);
-  for (const p of loadResult.plugins) {
-    log(
-      `[jano]   ✓ ${p.manifest.name} v${p.manifest.version} (${p.manifest.extensions.join(", ")})`,
-    );
-  }
-  for (const err of loadResult.errors) {
-    log(`[jano]   ✗ ${err.dir}: ${err.error}`);
-  }
-  for (const conflict of loadResult.conflicts) {
-    log(`[jano]   ⚠ ${conflict}`);
-  }
-
-  if (filePath) {
-    reloadPlugin();
-    if (session.plugin) {
-      log(`[jano] language: ${session.plugin.name}`);
-    }
-  }
-
-  session.screen.enter();
-  process.stdin.setRawMode(true);
-  update();
-}
-
-void start();
-
-let pasteBuffer: Buffer | null = null;
-
-function openCompletion() {
-  const p = session.cm.primary;
-  const { viewH, viewW } = getViewDimensions(
-    session.screen,
-    session.editor.lines.length,
-    session.plugin,
-  );
-  const ctx = buildContext(session.editor, session.cm, {
-    firstLine: session.cm.scrollY,
-    lastLine: session.cm.scrollY + viewH,
-    width: viewW,
-    height: viewH,
-  });
-  triggerCompletion(comp, session.plugin, ctx, session.editor.lines, p.y, p.x);
-  renderView();
-}
-
-function acceptCompletion() {
-  if (!comp.active) return;
-  const item = comp.filtered[comp.selectedIndex];
-  if (!item) return;
-
-  const text = item.insertText ?? item.label;
-  const p = session.cm.primary;
-  const line = session.editor.lines[p.y];
-
-  // undo snapshot so Ctrl+Z reverses the completion
-  session.undo.snapshot(
-    "complete",
-    { x: p.x, y: p.y },
-    session.editor.lines,
-    session.cm.saveState(),
-  );
-
-  // replace the prefix with the completion (multi-line safe)
-  const before = line.substring(0, comp.startX);
-  const after = line.substring(p.x);
-  if (text.includes("\n")) {
-    const parts = text.split("\n");
-    session.editor.lines[p.y] = before + parts[0];
-    for (let i = 1; i < parts.length; i++) {
-      session.editor.lines.splice(p.y + i, 0, parts[i] + (i === parts.length - 1 ? after : ""));
-    }
-    p.y += parts.length - 1;
-    p.x = parts[parts.length - 1].length;
-  } else {
-    session.editor.lines[p.y] = before + text + after;
-    p.x = comp.startX + text.length;
-  }
-  session.editor.dirty = true;
-
-  session.undo.commit({ x: p.x, y: p.y }, session.editor.lines, session.cm.saveState());
-  closeCompletion(comp);
-  update();
-}
-
-function handleCompletionKey(key: KeyEvent): boolean {
-  if (!comp.active) return false;
-
-  // popup is open — intercept keys
-  if (key.name === "up") {
-    const r = popupMoveUp(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
-    comp.selectedIndex = r.selectedIndex;
-    comp.scrollOffset = r.scrollOffset;
-    renderView();
-    return true;
-  }
-  if (key.name === "down") {
-    const r = popupMoveDown(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
-    comp.selectedIndex = r.selectedIndex;
-    comp.scrollOffset = r.scrollOffset;
-    renderView();
-    return true;
-  }
-  if (key.name === "tab" || key.name === "enter") {
-    acceptCompletion();
-    return true;
-  }
-  if (key.name === "escape" || (key.raw.length === 1 && key.raw[0] === 0x1b)) {
-    closeCompletion(comp);
-    renderView();
-    return true;
-  }
-
-  // printable char or backspace: let the editor handle it, then refilter
-  return false;
-}
+// ----- Completion -----
 
 let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -258,71 +127,59 @@ function cancelAutoComplete() {
 function scheduleAutoComplete() {
   cancelAutoComplete();
   if (!getEditorSettings().autoComplete) return;
-
-  // check if cursor is after 2+ word chars
-  const p = session.cm.primary;
-  const line = session.editor.lines[p.y] ?? "";
+  const p = cm.primary;
+  const line = editor.lines[p.y] ?? "";
   let wordStart = p.x;
   while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
   if (p.x - wordStart < 2) return;
-
   autoCompleteTimer = setTimeout(() => {
     autoCompleteTimer = null;
     if (!comp.active) openCompletion();
   }, 300);
 }
 
-function dispatch(key: KeyEvent) {
-  stopAutoScroll();
+function openCompletion() {
+  const p = cm.primary;
+  const { viewH, viewW } = getViewDimensions(screen, editor.lines.length, session.plugin);
+  const ctx = buildContext(editor, cm, {
+    firstLine: cm.scrollY,
+    lastLine: cm.scrollY + viewH,
+    width: viewW,
+    height: viewH,
+  });
+  triggerCompletion(comp, session.plugin, ctx, editor.lines, p.y, p.x);
+  renderView();
+}
 
-  // completion key handling
-  if (handleCompletionKey(key)) return;
-
-  const result = handleKey(
-    key,
-    session.editor,
-    session.cm,
-    session.screen,
-    session.undo,
-    session.plugin,
-  );
-  if (result !== "continue") {
-    cancelAutoComplete();
-    closeCompletion(comp);
-    handleResult(result);
-  } else {
-    update();
-    if (comp.active) {
-      // refilter or close active completion
-      const line = session.editor.lines[session.cm.primary.y] ?? "";
-      const prefix = line.substring(comp.startX, session.cm.primary.x);
-      if (session.cm.primary.y !== comp.startY || session.cm.primary.x < comp.startX) {
-        closeCompletion(comp);
-        renderView();
-      } else {
-        filterCompletions(comp, prefix);
-        renderView();
-      }
-    } else {
-      // only auto-trigger after actual text input (printable char or backspace)
-      const isTyping =
-        (!key.ctrl && !key.alt && key.name.length === 1) ||
-        key.name === "backspace" ||
-        key.name === "tab";
-      if (isTyping) scheduleAutoComplete();
+function acceptCompletion() {
+  if (!comp.active) return;
+  const item = comp.filtered[comp.selectedIndex];
+  if (!item) return;
+  const text = item.insertText ?? item.label;
+  const p = cm.primary;
+  const line = editor.lines[p.y];
+  undo.snapshot("complete", { x: p.x, y: p.y }, editor.lines, cm.saveState());
+  const before = line.substring(0, comp.startX);
+  const after = line.substring(p.x);
+  if (text.includes("\n")) {
+    const parts = text.split("\n");
+    editor.lines[p.y] = before + parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      editor.lines.splice(p.y + i, 0, parts[i] + (i === parts.length - 1 ? after : ""));
     }
+    p.y += parts.length - 1;
+    p.x = parts[parts.length - 1].length;
+  } else {
+    editor.lines[p.y] = before + text + after;
+    p.x = comp.startX + text.length;
   }
+  editor.dirty = true;
+  undo.commit({ x: p.x, y: p.y }, editor.lines, cm.saveState());
+  closeCompletion(comp);
+  update();
 }
 
-function makePasteKey(text: string): KeyEvent {
-  return {
-    name: "bracketedPaste",
-    ctrl: false,
-    shift: false,
-    alt: false,
-    raw: Buffer.from(text, "utf8"),
-  };
-}
+// ----- Mouse state -----
 
 let lastClickTime = 0;
 let lastClickX = -1;
@@ -341,235 +198,321 @@ function stopAutoScroll() {
   autoScrollDX = 0;
 }
 
-function handleMouse(event: MouseEvent) {
-  const { viewH } = getViewDimensions(session.screen, session.editor.lines.length, session.plugin);
+// ----- Key dispatch -----
 
-  if (event.type === "release") {
-    stopAutoScroll();
-    return;
+function dispatch(key: KeyEvent) {
+  stopAutoScroll();
+
+  // completion popup intercepts up/down/tab/enter/esc
+  if (comp.active) {
+    if (key.name === "up") {
+      const r = popupMoveUp(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
+      comp.selectedIndex = r.selectedIndex;
+      comp.scrollOffset = r.scrollOffset;
+      renderView();
+      return;
+    }
+    if (key.name === "down") {
+      const r = popupMoveDown(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
+      comp.selectedIndex = r.selectedIndex;
+      comp.scrollOffset = r.scrollOffset;
+      renderView();
+      return;
+    }
+    if (key.name === "tab" || key.name === "enter") {
+      acceptCompletion();
+      return;
+    }
+    if (key.name === "escape" || (key.raw.length === 1 && key.raw[0] === 0x1b)) {
+      closeCompletion(comp);
+      renderView();
+      return;
+    }
   }
 
-  if (event.type === "click") {
-    stopAutoScroll();
-    const gw = gutterWidth(session.editor.lines.length);
-    const contentTop = 1;
-    const editorY = Math.min(
-      event.y - contentTop + session.cm.scrollY,
-      session.editor.lines.length - 1,
-    );
-    const editorX = Math.min(
-      Math.max(0, event.x - 1 - gw + session.cm.scrollX),
-      session.editor.lines[editorY]?.length ?? 0,
-    );
-
-    if (event.y < contentTop || event.y >= contentTop + viewH || event.x <= gw) return;
-
-    const now = Date.now();
-    const samePos = lastClickX === editorX && lastClickY === editorY;
-    if (now - lastClickTime < 400 && samePos) {
-      clickCount++;
-    } else {
-      clickCount = 1;
-    }
-    lastClickTime = now;
-    lastClickX = editorX;
-    lastClickY = editorY;
-
-    const p = session.cm.primary;
-    session.cm.clearExtras();
-
-    if (clickCount === 3) {
-      // triple-click: select entire line
-      p.y = editorY;
-      p.anchor = { x: 0, y: editorY };
-      p.x = session.editor.lines[editorY].length;
-      clickCount = 0;
-    } else if (clickCount === 2) {
-      // double-click: select word
-      const line = session.editor.lines[editorY];
-      const ch = line[editorX];
-      if (ch !== undefined) {
-        const isWord = /\w/.test(ch);
-        const pattern = isWord ? /\w/ : /[^\w\s]/;
-        let left = editorX;
-        while (left > 0 && pattern.test(line[left - 1])) left--;
-        let right = editorX;
-        while (right < line.length && pattern.test(line[right])) right++;
-        p.y = editorY;
-        p.anchor = { x: left, y: editorY };
-        p.x = right;
-      }
-    } else {
-      // single click: position cursor
-      p.anchor = null;
-      p.y = editorY;
-      p.x = editorX;
-    }
-
+  const result = handleKey(key, editor, cm, screen, undo, session.plugin);
+  if (result !== "continue") {
+    cancelAutoComplete();
+    closeCompletion(comp);
+    handleResult(result);
+  } else {
     update();
-    return;
-  }
-
-  if (event.type === "drag") {
-    const gw = gutterWidth(session.editor.lines.length);
-    const contentTop = 1;
-    const maxLine = session.editor.lines.length - 1;
-
-    const atTop = event.y < contentTop;
-    const atBottom = event.y >= contentTop + viewH;
-    const atLeft = event.x <= gw;
-    const atRight = event.x >= session.screen.width - 1;
-
-    // update auto-scroll direction
-    autoScrollDY = atTop ? -1 : atBottom ? 1 : 0;
-    autoScrollDX = atLeft ? -1 : atRight ? 1 : 0;
-
-    if (autoScrollDY !== 0 || autoScrollDX !== 0) {
-      // start auto-scroll if not already running
-      if (!autoScrollTimer) {
-        autoScrollTimer = setInterval(() => {
-          const maxSY = Math.max(0, session.editor.lines.length - viewH);
-          if (autoScrollDY < 0) session.cm.scrollY = Math.max(0, session.cm.scrollY - 1);
-          if (autoScrollDY > 0) session.cm.scrollY = Math.min(maxSY, session.cm.scrollY + 1);
-          if (autoScrollDX < 0) session.cm.scrollX = Math.max(0, session.cm.scrollX - 1);
-          if (autoScrollDX > 0) session.cm.scrollX += 1;
-          // move cursor with the scroll
-          const p = session.cm.primary;
-          if (autoScrollDY !== 0) {
-            p.y = Math.min(Math.max(0, p.y + autoScrollDY), maxLine);
-          }
-          if (autoScrollDX !== 0) {
-            p.x += autoScrollDX;
-          }
-          p.x = Math.min(Math.max(0, p.x), session.editor.lines[p.y]?.length ?? 0);
-          renderView();
-        }, 50);
+    if (comp.active) {
+      const line = editor.lines[cm.primary.y] ?? "";
+      const prefix = line.substring(comp.startX, cm.primary.x);
+      if (cm.primary.y !== comp.startY || cm.primary.x < comp.startX) {
+        closeCompletion(comp);
+        renderView();
+      } else {
+        filterCompletions(comp, prefix);
+        renderView();
       }
-      // safety: stop if no drag events for 2s (mouse left terminal)
     } else {
-      // back in content area → stop auto-scroll
-      stopAutoScroll();
+      const isTyping =
+        (!key.ctrl && !key.alt && key.name.length === 1) ||
+        key.name === "backspace" ||
+        key.name === "tab";
+      if (isTyping) scheduleAutoComplete();
     }
-
-    // always update cursor to current mouse position
-    const editorY = Math.min(Math.max(0, event.y - contentTop + session.cm.scrollY), maxLine);
-    const editorX = Math.min(
-      Math.max(0, event.x - 1 - gw + session.cm.scrollX),
-      session.editor.lines[editorY]?.length ?? 0,
-    );
-
-    const p = session.cm.primary;
-    if (!p.anchor) p.anchor = { x: p.x, y: p.y };
-    p.y = editorY;
-    p.x = editorX;
-    renderView();
-    return;
   }
-
-  const maxScrollY = Math.max(0, session.editor.lines.length - viewH);
-
-  switch (event.type) {
-    case "scroll-up":
-      session.cm.scrollY = Math.max(0, session.cm.scrollY - 3);
-      break;
-    case "scroll-down":
-      session.cm.scrollY = Math.min(maxScrollY, session.cm.scrollY + 3);
-      break;
-    case "scroll-left":
-      session.cm.scrollX = Math.max(0, session.cm.scrollX - 3);
-      break;
-    case "scroll-right":
-      session.cm.scrollX += 3;
-      break;
-  }
-  renderView();
 }
 
-process.stdin.on("data", (data) => {
-  if (session.dialogOpen) return;
-
-  // focus in/out (ESC [ I / ESC [ O) — stop auto-scroll on focus loss
-  if (
-    data[0] === 0x1b &&
-    data[1] === 0x5b &&
-    (data[2] === 0x49 || data[2] === 0x4f) &&
-    data.length === 3
-  ) {
-    stopAutoScroll();
-    return;
-  }
-
-  // mouse events (SGR: ESC [ <, X10: ESC [ M)
-  const mouse =
-    data[0] === 0x1b && data[1] === 0x5b && (data[2] === 0x3c || data[2] === 0x4d)
-      ? parseMouse(data)
-      : null;
-  if (mouse) {
-    handleMouse(mouse);
-    return;
-  }
-
-  // bracketed paste: accumulate raw buffers, decode only when complete
-  const pasteStart = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]; // ESC[200~
-  const pasteEnd = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e]; // ESC[201~
-
-  if (pasteBuffer !== null) {
-    pasteBuffer = Buffer.concat([pasteBuffer, data]);
-    const endIdx = pasteBuffer.indexOf(Buffer.from(pasteEnd));
-    if (endIdx === -1) return;
-    const text = pasteBuffer.subarray(0, endIdx).toString("utf8");
-    pasteBuffer = null;
-    return dispatch(makePasteKey(text));
-  }
-  if (data.length >= 6 && pasteStart.every((b, i) => data[i] === b)) {
-    const content = data.subarray(6);
-    const endIdx = content.indexOf(Buffer.from(pasteEnd));
-    if (endIdx === -1) {
-      pasteBuffer = Buffer.from(content);
-      return;
-    }
-    return dispatch(makePasteKey(content.subarray(0, endIdx).toString("utf8")));
-  }
-
-  dispatch(parseKey(data));
-});
-
 function handleResult(result: HandleKeyResult) {
-  switch (result) {
-    case "exit":
-      void confirmExit(session);
-      return;
-    case "help":
-      void showHelp(session);
-      return;
-    case "history":
-      void showHistory(session);
-      return;
-    case "search":
-      void openSearch(session);
-      return;
-    case "goto":
-      void openGoto(session);
-      return;
-    case "diagnostics":
-      void showDiagnostics(session);
-      return;
-    case "settings":
-      void showSettings(session);
-      return;
-    case "complete":
-      openCompletion();
-      return;
+  if (result === "complete") {
+    openCompletion();
+  } else {
+    update();
+  }
+}
+
+// ----- Shortcuts -----
+
+input.registerShortcut("ctrl+s", "save");
+input.registerShortcut("ctrl+q", "exit");
+input.registerShortcut("ctrl+f", "search");
+input.registerShortcut("ctrl+g", "goto");
+input.registerShortcut("f1", "help");
+input.registerShortcut("f2", "history");
+input.registerShortcut("f4", "diagnostics");
+input.registerShortcut("f9", "settings");
+
+// ----- Editor Layer: register all event handlers -----
+
+const editorLayer = input.pushLayer("editor");
+
+editorLayer.on("shortcut", (event) => {
+  cancelAutoComplete();
+  closeCompletion(comp);
+  stopAutoScroll();
+  switch (event.action) {
     case "save":
-      if (session.editor.filePath) {
-        void trySave(session, session.editor.filePath).then(() => update());
+      if (editor.filePath) {
+        void trySave(session, editor.filePath).then(() => update());
       } else {
         void saveWithDialog(session);
       }
-      return;
+      break;
+    case "exit":
+      void confirmExit(session);
+      break;
+    case "search":
+      void openSearch(session);
+      break;
+    case "goto":
+      void openGoto(session);
+      break;
+    case "help":
+      void showHelp(session);
+      break;
+    case "history":
+      void showHistory(session);
+      break;
+    case "diagnostics":
+      void showDiagnostics(session);
+      break;
+    case "settings":
+      void showSettings(session);
+      break;
     default:
-      update();
+      return false; // unknown action — let key event pass through
   }
+  return true;
+});
+
+editorLayer.on("key", (key) => {
+  dispatch(key);
+  return true;
+});
+
+editorLayer.on("paste", (event) => {
+  dispatch({
+    name: "bracketedPaste",
+    ctrl: false,
+    shift: false,
+    alt: false,
+    raw: Buffer.from(event.text, "utf8"),
+  });
+  return true;
+});
+
+editorLayer.on("mouse:click", (event) => {
+  stopAutoScroll();
+  const { viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
+  const gw = gutterWidth(editor.lines.length);
+  const contentTop = 1;
+  const editorY = Math.min(event.y - contentTop + cm.scrollY, editor.lines.length - 1);
+  const editorX = Math.min(
+    Math.max(0, event.x - 1 - gw + cm.scrollX),
+    editor.lines[editorY]?.length ?? 0,
+  );
+
+  if (event.y < contentTop || event.y >= contentTop + viewH || event.x <= gw) return true;
+
+  const now = Date.now();
+  const samePos = lastClickX === editorX && lastClickY === editorY;
+  if (now - lastClickTime < 400 && samePos) {
+    clickCount++;
+  } else {
+    clickCount = 1;
+  }
+  lastClickTime = now;
+  lastClickX = editorX;
+  lastClickY = editorY;
+
+  const p = cm.primary;
+  cm.clearExtras();
+
+  if (clickCount === 3) {
+    p.y = editorY;
+    p.anchor = { x: 0, y: editorY };
+    p.x = editor.lines[editorY].length;
+    clickCount = 0;
+  } else if (clickCount === 2) {
+    const line = editor.lines[editorY];
+    const ch = line[editorX];
+    if (ch !== undefined) {
+      const isWord = /\w/.test(ch);
+      const pattern = isWord ? /\w/ : /[^\w\s]/;
+      let left = editorX;
+      while (left > 0 && pattern.test(line[left - 1])) left--;
+      let right = editorX;
+      while (right < line.length && pattern.test(line[right])) right++;
+      p.y = editorY;
+      p.anchor = { x: left, y: editorY };
+      p.x = right;
+    }
+  } else {
+    p.anchor = null;
+    p.y = editorY;
+    p.x = editorX;
+  }
+  update();
+  return true;
+});
+
+editorLayer.on("mouse:release", () => {
+  stopAutoScroll();
+  return true;
+});
+
+editorLayer.on("mouse:drag", (event) => {
+  const { viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
+  const gw = gutterWidth(editor.lines.length);
+  const contentTop = 1;
+  const maxLine = editor.lines.length - 1;
+
+  const atTop = event.y < contentTop;
+  const atBottom = event.y >= contentTop + viewH;
+  const atLeft = event.x <= gw;
+  const atRight = event.x >= screen.width - 1;
+
+  autoScrollDY = atTop ? -1 : atBottom ? 1 : 0;
+  autoScrollDX = atLeft ? -1 : atRight ? 1 : 0;
+
+  if (autoScrollDY !== 0 || autoScrollDX !== 0) {
+    if (!autoScrollTimer) {
+      autoScrollTimer = setInterval(() => {
+        const maxSY = Math.max(0, editor.lines.length - viewH);
+        if (autoScrollDY < 0) cm.scrollY = Math.max(0, cm.scrollY - 1);
+        if (autoScrollDY > 0) cm.scrollY = Math.min(maxSY, cm.scrollY + 1);
+        if (autoScrollDX < 0) cm.scrollX = Math.max(0, cm.scrollX - 1);
+        if (autoScrollDX > 0) cm.scrollX += 1;
+        const p = cm.primary;
+        if (autoScrollDY !== 0) p.y = Math.min(Math.max(0, p.y + autoScrollDY), maxLine);
+        if (autoScrollDX !== 0) p.x += autoScrollDX;
+        p.x = Math.min(Math.max(0, p.x), editor.lines[p.y]?.length ?? 0);
+        renderView();
+      }, 50);
+    }
+  } else {
+    stopAutoScroll();
+  }
+
+  const editorY = Math.min(Math.max(0, event.y - contentTop + cm.scrollY), maxLine);
+  const editorX = Math.min(
+    Math.max(0, event.x - 1 - gw + cm.scrollX),
+    editor.lines[editorY]?.length ?? 0,
+  );
+  const p = cm.primary;
+  if (!p.anchor) p.anchor = { x: p.x, y: p.y };
+  p.y = editorY;
+  p.x = editorX;
+  renderView();
+  return true;
+});
+
+editorLayer.on("mouse:scroll", (event) => {
+  const { viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
+  const maxScrollY = Math.max(0, editor.lines.length - viewH);
+  switch (event.type) {
+    case "scroll-up":
+      cm.scrollY = Math.max(0, cm.scrollY - 3);
+      break;
+    case "scroll-down":
+      cm.scrollY = Math.min(maxScrollY, cm.scrollY + 3);
+      break;
+    case "scroll-left":
+      cm.scrollX = Math.max(0, cm.scrollX - 3);
+      break;
+    case "scroll-right":
+      cm.scrollX += 3;
+      break;
+  }
+  renderView();
+  return true;
+});
+
+editorLayer.on("focus:out", () => {
+  stopAutoScroll();
+  return true;
+});
+
+editorLayer.on("resize", () => {
+  update();
+  return true;
+});
+
+// ----- Init -----
+
+const debug = !!process.env.JANO_DEBUG;
+function log(msg: string) {
+  if (debug) console.log(msg);
 }
 
-process.stdout.on("resize", () => update());
+async function start() {
+  const paths = getPaths();
+  log(`[jano] v${process.env.JANO_VERSION || "dev"}`);
+  log(`[jano] config: ${paths.config}`);
+  log(`[jano] plugins: ${paths.plugins}`);
+
+  const loadResult = await initPlugins();
+  log(`[jano] loaded ${loadResult.plugins.length} plugin(s)`);
+  for (const p of loadResult.plugins) {
+    log(
+      `[jano]   ✓ ${p.manifest.name} v${p.manifest.version} (${p.manifest.extensions.join(", ")})`,
+    );
+  }
+  for (const err of loadResult.errors) {
+    log(`[jano]   ✗ ${err.dir}: ${err.error}`);
+  }
+  for (const conflict of loadResult.conflicts) {
+    log(`[jano]   ⚠ ${conflict}`);
+  }
+
+  if (filePath) {
+    reloadPlugin();
+    if (session.plugin) log(`[jano] language: ${session.plugin.name}`);
+  }
+
+  if (!process.stdin.isTTY) {
+    console.error("[jano] Not a terminal. jano requires an interactive TTY.");
+    process.exit(1);
+  }
+
+  screen.enter();
+  process.stdin.setRawMode(true);
+  input.start();
+  update();
+}
+
+void start();

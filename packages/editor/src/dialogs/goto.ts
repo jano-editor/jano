@@ -2,12 +2,11 @@ import { showDialog } from "@jano-editor/ui";
 import type { Session } from "./session.ts";
 
 export async function openGoto(s: Session): Promise<void> {
-  s.dialogOpen = true;
-
   const total = s.editor.lines.length;
   const current = s.cm.primary.y + 1;
 
   const result = await showDialog(
+    s.input,
     s.screen,
     s.draw,
     {
@@ -16,8 +15,8 @@ export async function openGoto(s: Session): Promise<void> {
       input: true,
       inputPlaceholder: "Line number, 'start' or 'end'...",
       buttons: [
-        { label: "Start", value: "start" },
         { label: "Go", value: "go" },
+        { label: "Start", value: "start" },
         { label: "End", value: "end" },
       ],
       border: "round",
@@ -25,8 +24,6 @@ export async function openGoto(s: Session): Promise<void> {
     },
     s.update,
   );
-
-  s.dialogOpen = false;
 
   const p = s.cm.primary;
   s.cm.clearExtras();

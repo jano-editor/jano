@@ -23,8 +23,6 @@ const editorSettingRows: EditorSettingRow[] = [
 ];
 
 export function showSettings(s: Session): Promise<void> {
-  s.dialogOpen = true;
-
   return new Promise((resolve) => {
     const dialogW = Math.min(60, s.screen.width - 4);
     const dialogH = Math.min(20, s.screen.height - 4);
@@ -59,9 +57,7 @@ export function showSettings(s: Session): Promise<void> {
 
       const titleText = view === "categories" ? " Settings " : " Settings › Editor ";
       const titleX = x + Math.floor((dialogW - titleText.length) / 2);
-      s.draw.text(titleX, y, titleText, {
-        fg: [230, 200, 100] as [number, number, number],
-      });
+      s.draw.text(titleX, y, titleText, { fg: [230, 200, 100] as [number, number, number] });
 
       if (view === "categories") {
         drawList(s.draw, {
@@ -74,13 +70,11 @@ export function showSettings(s: Session): Promise<void> {
           scrollOffset: catState.scrollOffset,
           bg: [30, 33, 40] as [number, number, number],
         });
-
         s.draw.text(x + 2, y + dialogH - 2, "↑↓ Navigate  Enter Select  Esc Close", {
           fg: [70, 75, 85] as [number, number, number],
           bg: [30, 33, 40] as [number, number, number],
         });
       } else {
-        // editor sub-menu: render rows manually so we can use toggle widget
         const bg = [30, 33, 40] as [number, number, number];
         const selectedBg = [60, 100, 180] as [number, number, number];
         const fg = [171, 178, 191] as [number, number, number];
@@ -92,23 +86,19 @@ export function showSettings(s: Session): Promise<void> {
 
         for (let i = 0; i < editorSettingRows.length; i++) {
           const row = editorSettingRows[i];
-          // separator before action row
           const rowY = y + 2 + i + (row.kind === "action" ? 1 : 0);
           const isSelected = i === editorIdx;
           const rowBg = isSelected ? selectedBg : bg;
           const labelFg = isSelected ? selectedFg : row.kind === "action" ? actionFg : fg;
 
-          // fill row
           for (let col = 0; col < dialogW - 2; col++) {
             s.draw.char(x + 1 + col, rowY, " ", { bg: rowBg });
           }
-          // label
           s.draw.text(x + 3, rowY, row.label, { fg: labelFg, bg: rowBg });
 
           if (row.kind === "toggle") {
-            const widgetX = x + dialogW - 8;
             drawToggle(s.draw, {
-              x: widgetX,
+              x: x + dialogW - 8,
               y: rowY,
               value: settings[row.key],
               focused: false,
@@ -152,9 +142,9 @@ export function showSettings(s: Session): Promise<void> {
         updateEditorSetting(row.key, !settings[row.key]);
         renderSettings();
       } else if (row.kind === "action" && row.action === "reset") {
-        // confirm dialog
-        cleanup();
+        // showDialog pushes its own layer — our layer stays but dialog layer is on top
         const result = await showDialog(
+          s.input,
           s.screen,
           s.draw,
           {
@@ -171,59 +161,54 @@ export function showSettings(s: Session): Promise<void> {
         if (result.type === "button" && result.value === "reset") {
           resetEditorSettings();
         }
-        process.stdin.on("data", onData);
         renderSettings();
       }
     }
 
-    function onData(data: Buffer) {
-      if (data[0] === 0x1b && data.length === 1) {
+    const layer = s.input.pushLayer("settings");
+
+    layer.on("key", (key) => {
+      if (key.raw.length === 1 && key.raw[0] === 0x1b) {
         if (view === "editor") {
           view = "categories";
           renderSettings();
-          return;
+          return true;
         }
-        cleanup();
-        s.dialogOpen = false;
+        s.input.popLayer(layer);
         s.update();
         resolve();
-        return;
+        return true;
       }
 
-      if (data[0] === 0x1b && data[1] === 0x5b) {
-        const seq = data.toString("utf8", 2);
-        if (view === "categories") {
-          if (seq === "A") {
-            catState = listMoveUp(catState, categories);
-            renderSettings();
-          }
-          if (seq === "B") {
-            catState = listMoveDown(catState, categories, listH);
-            renderSettings();
-          }
-        } else {
-          if (seq === "A") {
-            editorIdx = Math.max(0, editorIdx - 1);
-            renderSettings();
-          }
-          if (seq === "B") {
-            editorIdx = Math.min(editorSettingRows.length - 1, editorIdx + 1);
-            renderSettings();
-          }
-          if (seq === "C") {
-            changeSetting(1);
-            renderSettings();
-          }
-          if (seq === "D") {
-            changeSetting(-1);
-            renderSettings();
-          }
+      if (view === "categories") {
+        if (key.name === "up") {
+          catState = listMoveUp(catState, categories);
+          renderSettings();
         }
-        return;
+        if (key.name === "down") {
+          catState = listMoveDown(catState, categories, listH);
+          renderSettings();
+        }
+      } else {
+        if (key.name === "up") {
+          editorIdx = Math.max(0, editorIdx - 1);
+          renderSettings();
+        }
+        if (key.name === "down") {
+          editorIdx = Math.min(editorSettingRows.length - 1, editorIdx + 1);
+          renderSettings();
+        }
+        if (key.name === "right") {
+          changeSetting(1);
+          renderSettings();
+        }
+        if (key.name === "left") {
+          changeSetting(-1);
+          renderSettings();
+        }
       }
 
-      // enter
-      if (data[0] === 13) {
+      if (key.name === "enter") {
         if (view === "categories") {
           const sel = categories[catState.selectedIndex];
           if (sel.value === "editor" && !sel.disabled) {
@@ -234,15 +219,18 @@ export function showSettings(s: Session): Promise<void> {
         } else {
           void activateRow();
         }
-        return;
       }
-    }
 
-    function cleanup() {
-      process.stdin.removeListener("data", onData);
-    }
+      return true;
+    });
 
-    process.stdin.on("data", onData);
+    // block all other events
+    layer.on("mouse:click", () => true);
+    layer.on("mouse:drag", () => true);
+    layer.on("mouse:release", () => true);
+    layer.on("mouse:scroll", () => true);
+    layer.on("paste", () => true);
+
     renderSettings();
   });
 }

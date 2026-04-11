@@ -1,6 +1,6 @@
 import type { Screen } from "@jano-editor/ui";
 import type { EditorState } from "./editor.ts";
-import type { KeyEvent } from "./keypress.ts";
+import type { KeyEvent } from "@jano-editor/ui";
 import type { UndoManager } from "./undo.ts";
 import type { LanguagePlugin, ActionType } from "./plugins/types.ts";
 import type { CursorManager, SingleCursor } from "./cursor-manager.ts";
@@ -41,17 +41,7 @@ async function copyToSystemClipboard(text: string) {
   }
 }
 
-export type HandleKeyResult =
-  | "continue"
-  | "exit"
-  | "history"
-  | "search"
-  | "goto"
-  | "save"
-  | "diagnostics"
-  | "help"
-  | "settings"
-  | "complete";
+export type HandleKeyResult = "continue" | "complete";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -226,14 +216,12 @@ export function handleKey(
   }
 
   // --- function keys (never insert as text) ---
-  if (key.name === "f9") {
-    return "settings";
+  // f1, f2, f4, f9 handled by InputManager shortcuts
+  if (key.name === "f1" || key.name === "f2" || key.name === "f4" || key.name === "f9") {
+    return "continue";
   }
 
-  if (key.name === "f1" || key.name === "f2" || key.name === "f3" || key.name === "f4") {
-    if (key.name === "f1") return "help";
-    if (key.name === "f2") return "history";
-    if (key.name === "f4") return "diagnostics";
+  if (key.name === "f3" || key.name === "f4") {
     if (key.name === "f3" && plugin?.onFormat) {
       const linesBefore = [...editor.lines];
       snap(undo, "format", cm, editor);
@@ -257,14 +245,7 @@ export function handleKey(
     const p = cm.primary;
 
     switch (key.name) {
-      case "q":
-        return "exit";
-
-      case "s":
-        return "save";
-
-      case "f":
-        return "search";
+      // ctrl+q, ctrl+s, ctrl+f, ctrl+g handled by InputManager shortcuts
 
       case "a": {
         cm.clearExtras();
@@ -274,9 +255,6 @@ export function handleKey(
         cm.primary.y = lastLine;
         break;
       }
-
-      case "g":
-        return "goto";
 
       case "d": {
         cm.selectNextOccurrence(editor.lines);

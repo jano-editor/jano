@@ -1,6 +1,7 @@
 import type { Screen } from "./screen.ts";
 import type { Draw } from "./draw.ts";
 import type { RGB } from "./color.ts";
+import type { InputManager, InputLayer, KeyEvent, MouseEvent } from "./input-manager.ts";
 
 export interface DialogButton {
   label: string;
@@ -37,6 +38,7 @@ const theme = {
 };
 
 export function showDialog(
+  inputMgr: InputManager,
   screen: Screen,
   draw: Draw,
   opts: DialogOptions,
@@ -48,37 +50,24 @@ export function showDialog(
     let selectedButton = 0;
     let inputText = opts.inputValue ?? "";
     let inputCursorX = inputText.length;
-    // when both input and buttons: false = input focused, true = buttons focused
     let buttonsActive = !hasInput;
 
     const dialogW = opts.width ?? Math.min(50, screen.width - 4);
     const messageLines = wrapText(opts.message, dialogW - 4);
 
+    let backgroundDrawn = false;
+    const buttonHitAreas: { x: number; y: number; w: number; idx: number }[] = [];
+    let layer: InputLayer | null = null;
+
     function calcHeight(): number {
-      let h = 2; // top/bottom border
-      h += messageLines.length; // message
-      if (hasInput) h += 2; // input row + spacing
-      if (buttons.length > 0) h += 2; // button row + spacing
+      let h = 2;
+      h += messageLines.length;
+      if (hasInput) h += 2;
+      if (buttons.length > 0) h += 2;
       return h;
     }
 
-    let backgroundDrawn = false;
-    const buttonHitAreas: { x: number; y: number; w: number; idx: number }[] = [];
-
-    function parseClick(data: Buffer): { x: number; y: number } | null {
-      if (data[0] !== 0x1b || data[1] !== 0x5b || data[2] !== 0x3c) return null;
-      const last = data[data.length - 1];
-      if (last !== 0x4d) return null; // only press, not release
-      const params = data.toString("utf8", 3, data.length - 1);
-      const parts = params.split(";");
-      if (parts.length !== 3) return null;
-      const button = parseInt(parts[0], 10);
-      if (button !== 0) return null; // only left click
-      return { x: parseInt(parts[1], 10) - 1, y: parseInt(parts[2], 10) - 1 };
-    }
-
     function renderDialog() {
-      // only draw background once to avoid flicker
       if (!backgroundDrawn) {
         renderBackground();
         backgroundDrawn = true;
@@ -89,42 +78,32 @@ export function showDialog(
       const x = Math.floor((screen.width - w) / 2);
       const y = Math.floor((screen.height - h) / 2);
 
-      // dialog box
       draw.rect(x, y, w, h, {
         fg: theme.border,
         border: opts.border ?? "round",
         fill: theme.fill,
       });
 
-      // title
       if (opts.title) {
         const titleText = ` ${opts.title} `;
         const titleX = x + Math.floor((w - titleText.length) / 2);
         draw.text(titleX, y, titleText, { fg: theme.title });
       }
 
-      // message
       let row = y + 1;
       for (const line of messageLines) {
         draw.text(x + 2, row, line, { fg: theme.message, bg: theme.fill });
         row++;
       }
 
-      // input field
       if (hasInput) {
         row++;
         const inputW = w - 4;
-        // input background
         for (let i = 0; i < inputW; i++) {
           draw.char(x + 2 + i, row, " ", { bg: theme.inputBg });
         }
-        // input text
         const visibleText = inputText.substring(0, inputW);
-        draw.text(x + 2, row, visibleText, {
-          fg: theme.inputFg,
-          bg: theme.inputBg,
-        });
-        // placeholder
+        draw.text(x + 2, row, visibleText, { fg: theme.inputFg, bg: theme.inputBg });
         if (inputText.length === 0 && opts.inputPlaceholder) {
           draw.text(x + 2, row, opts.inputPlaceholder.substring(0, inputW), {
             fg: [100, 100, 100],
@@ -134,11 +113,9 @@ export function showDialog(
         row++;
       }
 
-      // buttons
       buttonHitAreas.length = 0;
       if (buttons.length > 0) {
         row++;
-        // each button: " Label " (label + 2 padding) + 2 gap between
         const btnWidths = buttons.map((b) => b.label.length + 2);
         const totalLen = btnWidths.reduce((a, b) => a + b, 0) + (buttons.length - 1) * 2;
         let btnX = x + Math.floor((w - totalLen) / 2);
@@ -157,7 +134,6 @@ export function showDialog(
 
       draw.flush();
 
-      // position cursor on input field if active
       if (hasInput && !buttonsActive) {
         const inputY = y + 1 + messageLines.length + 1;
         screen.moveTo(x + 2 + inputCursorX, inputY);
@@ -167,105 +143,107 @@ export function showDialog(
       }
     }
 
-    function onData(data: Buffer) {
+    function done(result: DialogResult) {
+      if (layer) inputMgr.popLayer(layer);
+      resolve(result);
+    }
+
+    layer = inputMgr.pushLayer("dialog");
+
+    layer.on("key", (key: KeyEvent) => {
       // escape = cancel
-      if (data[0] === 0x1b && data.length === 1) {
-        cleanup();
-        resolve({ type: "cancel" });
-        return;
+      if (key.raw.length === 1 && key.raw[0] === 0x1b) {
+        done({ type: "cancel" });
+        return true;
       }
 
       // enter
-      if (data[0] === 13) {
+      if (key.name === "enter") {
         if (hasInput && !buttonsActive && buttons.length > 0) {
-          // move focus from input to buttons
           buttonsActive = true;
           renderDialog();
-          return;
+          return true;
         }
-        cleanup();
         if (hasInput && !buttonsActive && buttons.length === 0) {
-          resolve({ type: "input", value: inputText });
+          done({ type: "input", value: inputText });
         } else if (buttons.length > 0) {
-          resolve({ type: "button", value: buttons[selectedButton].value, inputValue: inputText });
+          done({ type: "button", value: buttons[selectedButton].value, inputValue: inputText });
         }
-        return;
+        return true;
       }
 
       // tab: switch between input and buttons
-      if (data[0] === 9 && hasInput && buttons.length > 0) {
+      if (key.name === "tab" && hasInput && buttons.length > 0) {
         buttonsActive = !buttonsActive;
         renderDialog();
-        return;
+        return true;
       }
 
-      // mouse click on button
-      const click = parseClick(data);
-      if (click) {
-        for (const hit of buttonHitAreas) {
-          if (click.y === hit.y && click.x >= hit.x && click.x < hit.x + hit.w) {
-            cleanup();
-            resolve({
-              type: "button",
-              value: buttons[hit.idx].value,
-              inputValue: inputText,
-            });
-            return;
-          }
-        }
-        return;
-      }
-
-      // escape sequences (arrows)
-      if (data[0] === 0x1b && data[1] === 0x5b) {
-        const seq = data.toString("utf8", 2);
-        if (buttonsActive) {
-          if (seq === "C" || seq === "D") {
-            // left/right between buttons
-            if (seq === "C") selectedButton = Math.min(selectedButton + 1, buttons.length - 1);
-            if (seq === "D") selectedButton = Math.max(selectedButton - 1, 0);
-            renderDialog();
-          }
-        } else if (hasInput) {
-          // left/right in input
-          if (seq === "C") inputCursorX = Math.min(inputCursorX + 1, inputText.length);
-          if (seq === "D") inputCursorX = Math.max(inputCursorX - 1, 0);
-          // home/end
-          if (seq === "H") inputCursorX = 0;
-          if (seq === "F") inputCursorX = inputText.length;
+      // arrows
+      if (buttonsActive) {
+        if (key.name === "right") {
+          selectedButton = Math.min(selectedButton + 1, buttons.length - 1);
           renderDialog();
         }
-        return;
+        if (key.name === "left") {
+          selectedButton = Math.max(selectedButton - 1, 0);
+          renderDialog();
+        }
+      } else if (hasInput) {
+        if (key.name === "right") inputCursorX = Math.min(inputCursorX + 1, inputText.length);
+        if (key.name === "left") inputCursorX = Math.max(inputCursorX - 1, 0);
+        if (key.name === "home") inputCursorX = 0;
+        if (key.name === "end") inputCursorX = inputText.length;
+        renderDialog();
       }
 
       // backspace in input
-      if (data[0] === 127 && hasInput && !buttonsActive) {
+      if (key.name === "backspace" && hasInput && !buttonsActive) {
         if (inputCursorX > 0) {
           inputText = inputText.substring(0, inputCursorX - 1) + inputText.substring(inputCursorX);
           inputCursorX--;
           renderDialog();
         }
-        return;
+        return true;
       }
 
       // regular typing in input
-      if (hasInput && !buttonsActive) {
-        const ch = data.toString("utf8");
+      if (hasInput && !buttonsActive && !key.ctrl && !key.alt) {
+        const ch = key.name;
         const code = ch.codePointAt(0) ?? 0;
-        if (code >= 32) {
+        if (code >= 32 && ch.length === 1) {
           inputText = inputText.substring(0, inputCursorX) + ch + inputText.substring(inputCursorX);
           inputCursorX += ch.length;
           renderDialog();
         }
       }
-    }
 
-    function cleanup() {
-      process.stdin.removeListener("data", onData);
-    }
+      return true; // block all keys from reaching lower layers
+    });
 
-    // take over input
-    process.stdin.on("data", onData);
+    layer.on("mouse:click", (mouse: MouseEvent) => {
+      for (const hit of buttonHitAreas) {
+        if (mouse.y === hit.y && mouse.x >= hit.x && mouse.x < hit.x + hit.w) {
+          done({ type: "button", value: buttons[hit.idx].value, inputValue: inputText });
+          return true;
+        }
+      }
+      return true; // block clicks from editor
+    });
+
+    // block all other events from reaching editor
+    layer.on("mouse:drag", () => true);
+    layer.on("mouse:release", () => true);
+    layer.on("mouse:scroll", () => true);
+    layer.on("paste", (event) => {
+      if (hasInput && !buttonsActive) {
+        inputText =
+          inputText.substring(0, inputCursorX) + event.text + inputText.substring(inputCursorX);
+        inputCursorX += event.text.length;
+        renderDialog();
+      }
+      return true;
+    });
 
     renderDialog();
   });

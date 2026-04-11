@@ -3,8 +3,6 @@ import type { Session } from "./session.ts";
 import { CLI_COMMANDS } from "../cli.ts";
 
 export async function showHelp(s: Session): Promise<void> {
-  s.dialogOpen = true;
-
   const version = process.env.JANO_VERSION || "dev";
   const helpText = [
     `jano v${version}`,
@@ -34,6 +32,7 @@ export async function showHelp(s: Session): Promise<void> {
   ].join("\n");
 
   await showDialog(
+    s.input,
     s.screen,
     s.draw,
     {
@@ -46,6 +45,5 @@ export async function showHelp(s: Session): Promise<void> {
     s.update,
   );
 
-  s.dialogOpen = false;
   s.update();
 }

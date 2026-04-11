@@ -14,3 +14,15 @@ export { drawPopup, popupMoveUp, popupMoveDown } from "./popup.ts";
 export type { PopupItem, PopupOptions } from "./popup.ts";
 export { showSearch } from "./search.ts";
 export type { SearchOptions, SearchResult, SearchMatch } from "./search.ts";
+export { createInputManager, parseKey, parseMouse, keyToCombo } from "./input-manager.ts";
+export type {
+  InputManager,
+  InputLayer,
+  InputEventMap,
+  InputEventName,
+  InputHandler,
+  KeyEvent,
+  MouseEvent,
+  PasteEvent,
+  ShortcutEvent,
+} from "./input-manager.ts";

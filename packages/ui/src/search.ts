@@ -3,6 +3,7 @@ import type { Draw } from "./draw.ts";
 import type { RGB } from "./color.ts";
 import type { ListItem } from "./list.ts";
 import { drawList, listMoveUp, listMoveDown } from "./list.ts";
+import type { InputManager, KeyEvent } from "./input-manager.ts";
 
 export interface SearchMatch {
   line: number;
@@ -82,6 +83,7 @@ function findMatches(lines: readonly string[], query: string, maxResults: number
 }
 
 export function showSearch(
+  inputMgr: InputManager,
   screen: Screen,
   draw: Draw,
   lines: readonly string[],
@@ -93,7 +95,6 @@ export function showSearch(
     let replace = opts.initialReplace ?? "";
     let queryCursorX = query.length;
     let replaceCursorX = replace.length;
-    // 0 = search input, 1 = replace input
     let activeField = 0;
     let matches: SearchMatch[] = [];
     let listState = { selectedIndex: 0, scrollOffset: 0 };
@@ -101,7 +102,6 @@ export function showSearch(
     const searchW = opts.width ?? Math.min(60, screen.width - 4);
     const listH = Math.min(15, screen.height - 10);
 
-    // initial match + restore last selection if available
     updateMatches();
     if (opts.lastSelectedIndex != null && opts.lastSelectedIndex < matches.length) {
       listState = {
@@ -118,31 +118,26 @@ export function showSearch(
         backgroundDrawn = true;
       }
 
-      const totalH = 5 + listH + 1; // border + search + replace + sep + list + border
+      const totalH = 5 + listH + 1;
       const x = Math.floor((screen.width - searchW) / 2);
       const y = 1;
-      const inputW = searchW - 7; // label (3) + padding
+      const inputW = searchW - 7;
 
-      // dialog box
       draw.rect(x, y, searchW, totalH, {
         fg: theme.border,
         border: opts.border ?? "round",
         fill: theme.fill,
       });
 
-      // title + match count
       const titleText = " Search & Replace ";
       draw.text(x + Math.floor((searchW - titleText.length) / 2), y, titleText, {
         fg: theme.title,
       });
       if (query.length > 0) {
         const countText = ` ${matches.length} `;
-        draw.text(x + searchW - countText.length - 1, y, countText, {
-          fg: theme.matchCount,
-        });
+        draw.text(x + searchW - countText.length - 1, y, countText, { fg: theme.matchCount });
       }
 
-      // search input (row 1)
       const searchY = y + 1;
       draw.text(x + 1, searchY, "  ⌕", { fg: theme.labelFg, bg: theme.fill });
       for (let i = 0; i < inputW; i++) {
@@ -154,17 +149,12 @@ export function showSearch(
           bg: theme.inputBg,
         });
       } else {
-        draw.text(x + 5, searchY, "Search...", {
-          fg: theme.placeholder,
-          bg: theme.inputBg,
-        });
+        draw.text(x + 5, searchY, "Search...", { fg: theme.placeholder, bg: theme.inputBg });
       }
-      // active indicator
       if (activeField === 0) {
         draw.char(x + 4, searchY, "▎", { fg: theme.inputActiveBorder });
       }
 
-      // replace input (row 2)
       const replaceY = y + 2;
       draw.text(x + 1, replaceY, "  →", { fg: theme.labelFg, bg: theme.fill });
       for (let i = 0; i < inputW; i++) {
@@ -176,33 +166,24 @@ export function showSearch(
           bg: theme.inputBg,
         });
       } else {
-        draw.text(x + 5, replaceY, "Replace...", {
-          fg: theme.placeholder,
-          bg: theme.inputBg,
-        });
+        draw.text(x + 5, replaceY, "Replace...", { fg: theme.placeholder, bg: theme.inputBg });
       }
       if (activeField === 1) {
         draw.char(x + 4, replaceY, "▎", { fg: theme.inputActiveBorder });
       }
 
-      // hint row
       const hintY = y + 3;
       const hint =
         replace.length > 0
           ? " Enter=Replace  ^A=All  ↑↓=Nav  Esc=Close"
           : " Enter=Jump  ↑↓=Navigate  Tab=Replace  Esc=Close";
-      draw.text(x + 1, hintY, hint.substring(0, searchW - 2), {
-        fg: [70, 75, 85],
-        bg: theme.fill,
-      });
+      draw.text(x + 1, hintY, hint.substring(0, searchW - 2), { fg: [70, 75, 85], bg: theme.fill });
 
-      // separator
       const sepY = y + 4;
       for (let i = 1; i < searchW - 1; i++) {
         draw.char(x + i, sepY, "─", { fg: theme.border });
       }
 
-      // results list
       const listItems: ListItem[] = matches.map((m) => ({
         label: ` ${String(m.line + 1).padStart(4)} │ ${m.context}`,
         value: `${m.line}:${m.col}`,
@@ -222,7 +203,6 @@ export function showSearch(
       screen.hideCursor();
       draw.flush();
 
-      // position cursor in active input
       if (activeField === 0) {
         screen.moveTo(x + 5 + queryCursorX, searchY);
       } else {
@@ -233,10 +213,7 @@ export function showSearch(
 
     function updateMatches(preserveSelection = false) {
       matches = findMatches(lines, query, opts.maxResults ?? 500);
-      if (preserveSelection && listState.selectedIndex < matches.length) {
-        return;
-      }
-      // select nearest match at or after cursor position
+      if (preserveSelection && listState.selectedIndex < matches.length) return;
       const cl = opts.cursorLine ?? 0;
       const cc = opts.cursorCol ?? 0;
       let best = 0;
@@ -251,7 +228,6 @@ export function showSearch(
       listState = { selectedIndex: best, scrollOffset: Math.max(0, best - Math.floor(listH / 2)) };
     }
 
-    // get active field text + cursor
     function getActiveText(): string {
       return activeField === 0 ? query : replace;
     }
@@ -271,33 +247,37 @@ export function showSearch(
       else replaceCursorX = x;
     }
 
-    function onData(data: Buffer) {
+    function done(result: SearchResult) {
+      inputMgr.popLayer(layer);
+      resolve(result);
+    }
+
+    const layer = inputMgr.pushLayer("search");
+
+    layer.on("key", (key: KeyEvent) => {
       // escape
-      if (data[0] === 0x1b && data.length === 1) {
-        cleanup();
-        resolve({
+      if (key.raw.length === 1 && key.raw[0] === 0x1b) {
+        done({
           type: "cancel",
           query,
           replacement: replace,
           selectedIndex: listState.selectedIndex,
         });
-        return;
+        return true;
       }
 
-      // tab: switch fields
-      if (data[0] === 9) {
+      // tab / shift+tab: switch fields
+      if (key.name === "tab") {
         activeField = activeField === 0 ? 1 : 0;
         renderSearch();
-        return;
+        return true;
       }
 
       // enter
-      if (data[0] === 13) {
-        if (matches.length === 0) return;
-        cleanup();
-
+      if (key.name === "enter") {
+        if (matches.length === 0) return true;
         if (replace.length > 0) {
-          resolve({
+          done({
             type: "replace",
             match: matches[listState.selectedIndex],
             query,
@@ -305,73 +285,62 @@ export function showSearch(
             selectedIndex: listState.selectedIndex,
           });
         } else {
-          resolve({
+          done({
             type: "jump",
             match: matches[listState.selectedIndex],
             query,
             selectedIndex: listState.selectedIndex,
           });
         }
-        return;
+        return true;
       }
 
       // ctrl+a: replace all
-      if (data.length === 1 && data[0] === 1 && replace.length > 0 && matches.length > 0) {
-        cleanup();
-        resolve({
+      if (key.ctrl && key.name === "a" && replace.length > 0 && matches.length > 0) {
+        done({
           type: "replaceAll",
           matches: [...matches],
           query,
           replacement: replace,
           selectedIndex: listState.selectedIndex,
         });
-        return;
+        return true;
       }
 
-      // escape sequences (arrows, shift+tab)
-      if (data[0] === 0x1b && data[1] === 0x5b) {
-        const seq = data.toString("utf8", 2);
-        // shift+tab: switch fields backwards
-        if (seq === "Z") {
-          activeField = activeField === 0 ? 1 : 0;
-          renderSearch();
-          return;
-        }
-        if (seq === "A" && matches.length > 0) {
-          listState = listMoveUp(listState, matches.length);
-          renderSearch();
-          return;
-        }
-        if (seq === "B" && matches.length > 0) {
-          listState = listMoveDown(listState, matches.length, listH);
-          renderSearch();
-          return;
-        }
-        if (seq === "C") {
-          setActiveCursorX(Math.min(getActiveCursorX() + 1, getActiveText().length));
-          renderSearch();
-          return;
-        }
-        if (seq === "D") {
-          setActiveCursorX(Math.max(getActiveCursorX() - 1, 0));
-          renderSearch();
-          return;
-        }
-        if (seq === "H") {
-          setActiveCursorX(0);
-          renderSearch();
-          return;
-        }
-        if (seq === "F") {
-          setActiveCursorX(getActiveText().length);
-          renderSearch();
-          return;
-        }
-        return;
+      // arrows
+      if (key.name === "up" && matches.length > 0) {
+        listState = listMoveUp(listState, matches.length);
+        renderSearch();
+        return true;
+      }
+      if (key.name === "down" && matches.length > 0) {
+        listState = listMoveDown(listState, matches.length, listH);
+        renderSearch();
+        return true;
+      }
+      if (key.name === "right") {
+        setActiveCursorX(Math.min(getActiveCursorX() + 1, getActiveText().length));
+        renderSearch();
+        return true;
+      }
+      if (key.name === "left") {
+        setActiveCursorX(Math.max(getActiveCursorX() - 1, 0));
+        renderSearch();
+        return true;
+      }
+      if (key.name === "home") {
+        setActiveCursorX(0);
+        renderSearch();
+        return true;
+      }
+      if (key.name === "end") {
+        setActiveCursorX(getActiveText().length);
+        renderSearch();
+        return true;
       }
 
       // backspace
-      if (data[0] === 127) {
+      if (key.name === "backspace" && !key.ctrl) {
         const cx = getActiveCursorX();
         if (cx > 0) {
           const text = getActiveText();
@@ -379,36 +348,48 @@ export function showSearch(
           setActiveCursorX(cx - 1);
           renderSearch();
         }
-        return;
+        return true;
       }
 
       // ctrl+backspace
-      if (data[0] === 0x08) {
+      if (key.name === "backspace" && key.ctrl) {
         const text = getActiveText();
         const cx = getActiveCursorX();
         setActiveText(text.substring(cx));
         setActiveCursorX(0);
         renderSearch();
-        return;
+        return true;
       }
 
       // regular character
-      const ch = data.toString("utf8");
-      const code = ch.codePointAt(0) ?? 0;
-      if (code >= 32) {
-        const text = getActiveText();
-        const cx = getActiveCursorX();
-        setActiveText(text.substring(0, cx) + ch + text.substring(cx));
-        setActiveCursorX(cx + ch.length);
-        renderSearch();
+      if (!key.ctrl && !key.alt && key.name.length === 1) {
+        const code = key.name.codePointAt(0) ?? 0;
+        if (code >= 32) {
+          const text = getActiveText();
+          const cx = getActiveCursorX();
+          setActiveText(text.substring(0, cx) + key.name + text.substring(cx));
+          setActiveCursorX(cx + key.name.length);
+          renderSearch();
+        }
       }
-    }
 
-    function cleanup() {
-      process.stdin.removeListener("data", onData);
-    }
+      return true;
+    });
 
-    process.stdin.on("data", onData);
+    // block all other events
+    layer.on("mouse:click", () => true);
+    layer.on("mouse:drag", () => true);
+    layer.on("mouse:release", () => true);
+    layer.on("mouse:scroll", () => true);
+    layer.on("paste", (event) => {
+      const text = getActiveText();
+      const cx = getActiveCursorX();
+      setActiveText(text.substring(0, cx) + event.text + text.substring(cx));
+      setActiveCursorX(cx + event.text.length);
+      renderSearch();
+      return true;
+    });
+
     renderSearch();
   });
 }

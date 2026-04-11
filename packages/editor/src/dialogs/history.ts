@@ -5,8 +5,8 @@ export async function showHistory(s: Session): Promise<void> {
   const history = s.undo.getHistory();
 
   if (history.length === 0) {
-    s.dialogOpen = true;
     await showDialog(
+      s.input,
       s.screen,
       s.draw,
       {
@@ -17,12 +17,9 @@ export async function showHistory(s: Session): Promise<void> {
       },
       s.update,
     );
-    s.dialogOpen = false;
     s.update();
     return;
   }
-
-  s.dialogOpen = true;
 
   const items: string[] = ["  0. Original file"];
   for (let i = 0; i < history.length; i++) {
@@ -34,6 +31,7 @@ export async function showHistory(s: Session): Promise<void> {
   }
 
   const result = await showDialog(
+    s.input,
     s.screen,
     s.draw,
     {
@@ -50,8 +48,6 @@ export async function showHistory(s: Session): Promise<void> {
     },
     s.update,
   );
-
-  s.dialogOpen = false;
 
   if (result.type === "input" || (result.type === "button" && result.value === "jump")) {
     const inputVal = result.type === "input" ? result.value : (result.inputValue ?? "");

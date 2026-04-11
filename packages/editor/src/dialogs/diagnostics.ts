@@ -5,8 +5,8 @@ export function showDiagnostics(s: Session): Promise<void> {
   const diags = s.validator.state.diagnostics;
 
   if (diags.length === 0) {
-    s.dialogOpen = true;
     return showDialog(
+      s.input,
       s.screen,
       s.draw,
       {
@@ -17,12 +17,9 @@ export function showDiagnostics(s: Session): Promise<void> {
       },
       s.update,
     ).then(() => {
-      s.dialogOpen = false;
       s.update();
     });
   }
-
-  s.dialogOpen = true;
 
   return new Promise((resolve) => {
     const dialogW = Math.min(65, s.screen.width - 4);
@@ -59,7 +56,6 @@ export function showDiagnostics(s: Session): Promise<void> {
         fill: [30, 33, 40] as [number, number, number],
       });
 
-      // title + counts
       s.draw.text(x + Math.floor((dialogW - 15) / 2), y, " Diagnostics ", {
         fg: [230, 200, 100] as [number, number, number],
       });
@@ -76,18 +72,15 @@ export function showDiagnostics(s: Session): Promise<void> {
         });
       }
 
-      // hint
       s.draw.text(x + 2, y + 1, "↑↓ Navigate  Enter Jump  Esc Close", {
         fg: [70, 75, 85] as [number, number, number],
         bg: [30, 33, 40] as [number, number, number],
       });
 
-      // separator
       for (let i = 1; i < dialogW - 1; i++) {
         s.draw.char(x + i, y + 2, "─", { fg: [80, 90, 105] as [number, number, number] });
       }
 
-      // list
       drawList(s.draw, {
         x: x + 1,
         y: y + 3,
@@ -103,18 +96,17 @@ export function showDiagnostics(s: Session): Promise<void> {
       s.draw.flush();
     }
 
-    function onData(data: Buffer) {
-      if (data[0] === 0x1b && data.length === 1) {
-        cleanup();
-        s.dialogOpen = false;
+    const layer = s.input.pushLayer("diagnostics");
+
+    layer.on("key", (key) => {
+      if (key.raw.length === 1 && key.raw[0] === 0x1b) {
+        s.input.popLayer(layer);
         s.update();
         resolve();
-        return;
+        return true;
       }
-
-      if (data[0] === 13 && diags.length > 0) {
-        cleanup();
-        s.dialogOpen = false;
+      if (key.name === "enter" && diags.length > 0) {
+        s.input.popLayer(layer);
         const d = diags[listState.selectedIndex];
         s.cm.primary.y = d.line;
         s.cm.primary.x = d.col;
@@ -122,27 +114,26 @@ export function showDiagnostics(s: Session): Promise<void> {
         s.cm.clearExtras();
         s.update();
         resolve();
-        return;
+        return true;
       }
-
-      if (data[0] === 0x1b && data[1] === 0x5b) {
-        const seq = data.toString("utf8", 2);
-        if (seq === "A" && diags.length > 0) {
-          listState = listMoveUp(listState, diags.length);
-          renderDiag();
-        }
-        if (seq === "B" && diags.length > 0) {
-          listState = listMoveDown(listState, diags.length, listH);
-          renderDiag();
-        }
+      if (key.name === "up" && diags.length > 0) {
+        listState = listMoveUp(listState, diags.length);
+        renderDiag();
       }
-    }
+      if (key.name === "down" && diags.length > 0) {
+        listState = listMoveDown(listState, diags.length, listH);
+        renderDiag();
+      }
+      return true;
+    });
 
-    function cleanup() {
-      process.stdin.removeListener("data", onData);
-    }
+    // block all other events
+    layer.on("mouse:click", () => true);
+    layer.on("mouse:drag", () => true);
+    layer.on("mouse:release", () => true);
+    layer.on("mouse:scroll", () => true);
+    layer.on("paste", () => true);
 
-    process.stdin.on("data", onData);
     renderDiag();
   });
 }

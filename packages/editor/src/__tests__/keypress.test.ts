@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseKey, parseMouse } from "../keypress.ts";
+import { parseKey, parseMouse } from "@jano-editor/ui";
 
 describe("parseKey", () => {
   it("parses regular characters", () => {

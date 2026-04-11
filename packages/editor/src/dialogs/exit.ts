@@ -8,9 +8,8 @@ export async function confirmExit(s: Session): Promise<void> {
     process.exit(0);
   }
 
-  s.dialogOpen = true;
-
   const result = await showDialog(
+    s.input,
     s.screen,
     s.draw,
     {
@@ -25,8 +24,6 @@ export async function confirmExit(s: Session): Promise<void> {
     },
     s.update,
   );
-
-  s.dialogOpen = false;
 
   if (result.type === "button") {
     if (result.value === "save") {

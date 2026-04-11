@@ -6,9 +6,8 @@ let lastReplaceText = "";
 let lastSelectedIndex: number | undefined;
 
 export async function openSearch(s: Session): Promise<void> {
-  s.dialogOpen = true;
-
   const result = await showSearch(
+    s.input,
     s.screen,
     s.draw,
     s.editor.lines,
@@ -23,7 +22,6 @@ export async function openSearch(s: Session): Promise<void> {
     s.update,
   );
 
-  s.dialogOpen = false;
   lastSearchQuery = result.query;
   lastSelectedIndex = result.selectedIndex;
   // only remember replace text if user actually replaced something

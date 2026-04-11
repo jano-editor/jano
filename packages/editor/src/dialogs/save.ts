@@ -6,8 +6,8 @@ import type { Session } from "./session.ts";
 export async function trySave(s: Session, filePath: string): Promise<boolean> {
   // overwrite warning if target exists and isn't the current file
   if (existsSync(filePath) && filePath !== s.editor.filePath) {
-    s.dialogOpen = true;
     const confirm = await showDialog(
+      s.input,
       s.screen,
       s.draw,
       {
@@ -21,7 +21,6 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
       },
       s.update,
     );
-    s.dialogOpen = false;
     if (confirm.type !== "button" || confirm.value !== "yes") return false;
   }
 
@@ -30,8 +29,8 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
     s.reloadPlugin();
     return true;
   } catch (err) {
-    s.dialogOpen = true;
     await showDialog(
+      s.input,
       s.screen,
       s.draw,
       {
@@ -42,15 +41,13 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
       },
       s.update,
     );
-    s.dialogOpen = false;
     return false;
   }
 }
 
 export async function saveWithDialog(s: Session): Promise<void> {
-  s.dialogOpen = true;
-
   const result = await showDialog(
+    s.input,
     s.screen,
     s.draw,
     {
@@ -67,8 +64,6 @@ export async function saveWithDialog(s: Session): Promise<void> {
     },
     s.update,
   );
-
-  s.dialogOpen = false;
 
   let targetPath = "";
   if (result.type === "button" && result.value === "save" && result.inputValue) {
