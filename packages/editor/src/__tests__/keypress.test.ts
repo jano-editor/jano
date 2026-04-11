@@ -94,9 +94,9 @@ describe("parseMouse", () => {
       expect(event).toEqual({ type: "click", x: 14, y: 9 });
     });
 
-    it("ignores left click release", () => {
+    it("parses left click release", () => {
       const event = parseMouse(Buffer.from("\x1b[<0;15;10m"));
-      expect(event).toBeNull();
+      expect(event).toEqual({ type: "release", x: 14, y: 9 });
     });
 
     it("parses drag (button 32)", () => {
@@ -180,6 +180,15 @@ describe("parseMouse", () => {
 
     it("returns null for incomplete SGR sequence", () => {
       expect(parseMouse(Buffer.from("\x1b[<0;10"))).toBeNull();
+    });
+
+    it("returns null for NaN coordinates in SGR", () => {
+      expect(parseMouse(Buffer.from("\x1b[<0;abc;5M"))).toBeNull();
+    });
+
+    it("returns null for negative X10 coordinates", () => {
+      // Cx = 10 → x = 10-33 = -23 → rejected
+      expect(parseMouse(Buffer.from([0x1b, 0x5b, 0x4d, 32, 10, 33]))).toBeNull();
     });
   });
 });

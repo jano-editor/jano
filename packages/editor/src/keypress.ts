@@ -7,7 +7,7 @@ export interface KeyEvent {
 }
 
 export interface MouseEvent {
-  type: "scroll-up" | "scroll-down" | "scroll-left" | "scroll-right" | "click" | "drag";
+  type: "scroll-up" | "scroll-down" | "scroll-left" | "scroll-right" | "click" | "drag" | "release";
   x: number;
   y: number;
 }
@@ -29,6 +29,9 @@ export function parseMouse(data: Buffer): MouseEvent | null {
     const x = parseInt(parts[1], 10) - 1;
     const y = parseInt(parts[2], 10) - 1;
 
+    if (!Number.isFinite(button) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || y < 0) return null;
+
     return mouseFromButton(button, x, y, pressed);
   }
 
@@ -37,6 +40,8 @@ export function parseMouse(data: Buffer): MouseEvent | null {
     const button = data[3] - 32;
     const x = data[4] - 33;
     const y = data[5] - 33;
+
+    if (button < 0 || x < 0 || y < 0) return null;
 
     return mouseFromButton(button, x, y, true);
   }
@@ -52,7 +57,7 @@ function mouseFromButton(
 ): MouseEvent | null {
   switch (button) {
     case 0:
-      return pressed ? { type: "click", x, y } : null;
+      return { type: pressed ? "click" : "release", x, y };
     case 32:
       return { type: "drag", x, y };
     case 64:

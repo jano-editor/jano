@@ -168,6 +168,11 @@ function stopAutoScroll() {
 function handleMouse(event: MouseEvent) {
   const { viewH } = getViewDimensions(session.screen, session.editor.lines.length, session.plugin);
 
+  if (event.type === "release") {
+    stopAutoScroll();
+    return;
+  }
+
   if (event.type === "click") {
     stopAutoScroll();
     const gw = gutterWidth(session.editor.lines.length);
