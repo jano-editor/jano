@@ -41,7 +41,8 @@ export type HandleKeyResult =
   | "save"
   | "diagnostics"
   | "help"
-  | "settings";
+  | "settings"
+  | "complete";
 
 function notifyPlugin(
   plugin: LanguagePlugin | null,
@@ -100,6 +101,10 @@ export function handleKey(
       return "continue";
     }
   }
+
+  // Ctrl+Space (NUL byte) or Ctrl+N — trigger autocomplete
+  if (key.raw.length === 1 && key.raw[0] === 0x00) return "complete";
+  if (key.ctrl && key.name === "n") return "complete";
 
   // --- bracketed paste: terminal paste with multi-line support ---
   if (key.name === "bracketedPaste") {

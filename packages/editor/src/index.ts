@@ -6,9 +6,18 @@ import { createUndoManager } from "./undo.ts";
 import { parseKey, parseMouse, type KeyEvent, type MouseEvent } from "./keypress.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
 import { render, getViewDimensions, gutterWidth } from "./render.ts";
+import { drawPopup, popupMoveUp, popupMoveDown } from "@jano-editor/ui";
+import {
+  createCompletionState,
+  closeCompletion,
+  filterCompletions,
+  triggerCompletion,
+} from "./completion.ts";
+import { buildContext } from "./plugins/context.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths } from "./plugins/config.ts";
 import { createValidator } from "./validator.ts";
+import { getEditorSettings } from "./settings.ts";
 import {
   type Session,
   trySave,
@@ -29,6 +38,7 @@ const draw = createDraw(screen);
 const editor = createEditor(filePath);
 const cm = createCursorManager();
 const undo = createUndoManager();
+const comp = createCompletionState();
 
 const session: Session = {
   screen,
@@ -55,6 +65,30 @@ function renderView() {
     session.pluginVersion,
     session.validator.state.diagnostics,
   );
+  renderCompletionPopup();
+}
+
+function renderCompletionPopup() {
+  if (!comp.active || comp.filtered.length === 0) return;
+
+  const gw = gutterWidth(session.editor.lines.length);
+  const p = session.cm.primary;
+  const cursorScreenX = 1 + gw + (p.x - session.cm.scrollX);
+  const cursorScreenY = 1 + (p.y - session.cm.scrollY);
+
+  drawPopup(session.draw, {
+    x: cursorScreenX,
+    y: cursorScreenY,
+    screenW: session.screen.width,
+    screenH: session.screen.height,
+    items: comp.filtered.map((c) => ({
+      label: c.label,
+      detail: c.kind ? c.kind.substring(0, 3) : undefined,
+    })),
+    selectedIndex: comp.selectedIndex,
+    scrollOffset: comp.scrollOffset,
+  });
+  session.draw.flush();
 }
 
 // full update: clamp cursor into viewport, render, schedule validation
@@ -124,8 +158,126 @@ void start();
 
 let pasteBuffer: string | null = null;
 
+function openCompletion() {
+  const p = session.cm.primary;
+  const { viewH, viewW } = getViewDimensions(
+    session.screen,
+    session.editor.lines.length,
+    session.plugin,
+  );
+  const ctx = buildContext(session.editor, session.cm, {
+    firstLine: session.cm.scrollY,
+    lastLine: session.cm.scrollY + viewH,
+    width: viewW,
+    height: viewH,
+  });
+  triggerCompletion(comp, session.plugin, ctx, session.editor.lines, p.y, p.x);
+  renderView();
+}
+
+function acceptCompletion() {
+  if (!comp.active) return;
+  const item = comp.filtered[comp.selectedIndex];
+  if (!item) return;
+
+  const text = item.insertText ?? item.label;
+  const p = session.cm.primary;
+  const line = session.editor.lines[p.y];
+
+  // undo snapshot so Ctrl+Z reverses the completion
+  session.undo.snapshot(
+    "complete",
+    { x: p.x, y: p.y },
+    session.editor.lines,
+    session.cm.saveState(),
+  );
+
+  // replace the prefix with the completion (multi-line safe)
+  const before = line.substring(0, comp.startX);
+  const after = line.substring(p.x);
+  if (text.includes("\n")) {
+    const parts = text.split("\n");
+    session.editor.lines[p.y] = before + parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      session.editor.lines.splice(p.y + i, 0, parts[i] + (i === parts.length - 1 ? after : ""));
+    }
+    p.y += parts.length - 1;
+    p.x = parts[parts.length - 1].length;
+  } else {
+    session.editor.lines[p.y] = before + text + after;
+    p.x = comp.startX + text.length;
+  }
+  session.editor.dirty = true;
+
+  session.undo.commit({ x: p.x, y: p.y }, session.editor.lines, session.cm.saveState());
+  closeCompletion(comp);
+  update();
+}
+
+function handleCompletionKey(key: KeyEvent): boolean {
+  if (!comp.active) return false;
+
+  // popup is open — intercept keys
+  if (key.name === "up") {
+    const r = popupMoveUp(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
+    comp.selectedIndex = r.selectedIndex;
+    comp.scrollOffset = r.scrollOffset;
+    renderView();
+    return true;
+  }
+  if (key.name === "down") {
+    const r = popupMoveDown(comp.selectedIndex, comp.scrollOffset, comp.filtered.length);
+    comp.selectedIndex = r.selectedIndex;
+    comp.scrollOffset = r.scrollOffset;
+    renderView();
+    return true;
+  }
+  if (key.name === "tab" || key.name === "enter") {
+    acceptCompletion();
+    return true;
+  }
+  if (key.name === "escape" || (key.raw.length === 1 && key.raw[0] === 0x1b)) {
+    closeCompletion(comp);
+    renderView();
+    return true;
+  }
+
+  // printable char or backspace: let the editor handle it, then refilter
+  return false;
+}
+
+let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelAutoComplete() {
+  if (autoCompleteTimer) {
+    clearTimeout(autoCompleteTimer);
+    autoCompleteTimer = null;
+  }
+}
+
+function scheduleAutoComplete() {
+  cancelAutoComplete();
+  if (!getEditorSettings().autoComplete) return;
+
+  // check if cursor is after 2+ word chars
+  const p = session.cm.primary;
+  const line = session.editor.lines[p.y] ?? "";
+  let wordStart = p.x;
+  while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
+  if (p.x - wordStart < 2) return;
+
+  autoCompleteTimer = setTimeout(() => {
+    autoCompleteTimer = null;
+    if (!comp.active) openCompletion();
+  }, 300);
+}
+
 function dispatch(key: KeyEvent) {
   stopAutoScroll();
+
+  // completion key handling
+  if (handleCompletionKey(key)) return;
+
   const result = handleKey(
     key,
     session.editor,
@@ -134,8 +286,32 @@ function dispatch(key: KeyEvent) {
     session.undo,
     session.plugin,
   );
-  if (result !== "continue") handleResult(result);
-  else update();
+  if (result !== "continue") {
+    cancelAutoComplete();
+    closeCompletion(comp);
+    handleResult(result);
+  } else {
+    update();
+    if (comp.active) {
+      // refilter or close active completion
+      const line = session.editor.lines[session.cm.primary.y] ?? "";
+      const prefix = line.substring(comp.startX, session.cm.primary.x);
+      if (session.cm.primary.y !== comp.startY || session.cm.primary.x < comp.startX) {
+        closeCompletion(comp);
+        renderView();
+      } else {
+        filterCompletions(comp, prefix);
+        renderView();
+      }
+    } else {
+      // only auto-trigger after actual text input (printable char or backspace)
+      const isTyping =
+        (!key.ctrl && !key.alt && key.name.length === 1) ||
+        key.name === "backspace" ||
+        key.name === "tab";
+      if (isTyping) scheduleAutoComplete();
+    }
+  }
 }
 
 function makePasteKey(text: string): KeyEvent {
@@ -382,6 +558,9 @@ function handleResult(result: HandleKeyResult) {
       return;
     case "settings":
       void showSettings(session);
+      return;
+    case "complete":
+      openCompletion();
       return;
     case "save":
       if (session.editor.filePath) {

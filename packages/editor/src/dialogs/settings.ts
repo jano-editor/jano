@@ -11,13 +11,14 @@ import { getEditorSettings, updateEditorSetting, resetEditorSettings } from "../
 
 type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
-  | { kind: "toggle"; key: "insertSpaces" | "lineNumbers"; label: string }
+  | { kind: "toggle"; key: "insertSpaces" | "lineNumbers" | "autoComplete"; label: string }
   | { kind: "action"; action: "reset"; label: string };
 
 const editorSettingRows: EditorSettingRow[] = [
   { kind: "cycler", key: "tabSize", label: "Tab Size", values: [2, 4, 8] },
   { kind: "toggle", key: "insertSpaces", label: "Insert Spaces" },
   { kind: "toggle", key: "lineNumbers", label: "Line Numbers" },
+  { kind: "toggle", key: "autoComplete", label: "Auto Complete" },
   { kind: "action", action: "reset", label: "Reset to defaults" },
 ];
 

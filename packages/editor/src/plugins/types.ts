@@ -15,6 +15,8 @@ export type {
   EditResult,
   Diagnostic,
   DiagnosticSeverity,
+  CompletionItem,
+  CompletionKind,
   LanguagePlugin,
 } from "@jano-editor/plugin-types";
 

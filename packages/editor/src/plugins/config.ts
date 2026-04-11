@@ -6,12 +6,14 @@ export interface EditorSettings {
   tabSize: number;
   insertSpaces: boolean;
   lineNumbers: boolean;
+  autoComplete: boolean;
 }
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   tabSize: 2,
   insertSpaces: true,
   lineNumbers: true,
+  autoComplete: true,
 };
 
 export interface JanoConfig {
