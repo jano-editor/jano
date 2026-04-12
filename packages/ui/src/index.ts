@@ -6,6 +6,8 @@ export { fg, bg, reset, bold, dim, italic, underline } from "./color.ts";
 export type { RGB } from "./color.ts";
 export { showDialog } from "./dialog.ts";
 export type { DialogOptions, DialogButton, DialogResult } from "./dialog.ts";
+export { createAlert, drawAlert, alertHandleKey, alertHandleClick, closeAlert } from "./alert.ts";
+export type { AlertOptions, AlertType, AlertPosition, AlertColors, AlertState } from "./alert.ts";
 export { drawList, listMoveUp, listMoveDown } from "./list.ts";
 export type { ListItem, ListOptions, ListState } from "./list.ts";
 export { drawToggle, TOGGLE_WIDTH } from "./toggle.ts";
