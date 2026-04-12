@@ -6,8 +6,15 @@ import {
   drawPopup,
   popupMoveUp,
   popupMoveDown,
+  createAlert,
+  drawAlert,
+  alertHandleKey,
+  alertHandleClick,
   type KeyEvent,
+  type MouseEvent,
+  type AlertState,
 } from "@jano-editor/ui";
+import { checkIfUpdateAvailable } from "./utils/version-check.ts";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
@@ -63,6 +70,8 @@ const session: Session = {
 
 // ----- Rendering -----
 
+let activeAlert: AlertState | null = null;
+
 function renderView() {
   render(
     screen,
@@ -74,6 +83,10 @@ function renderView() {
     session.validator.state.diagnostics,
   );
   renderCompletionPopup();
+  if (activeAlert && !activeAlert.closed) {
+    drawAlert(screen, draw, activeAlert);
+    draw.flush();
+  }
 }
 
 const KIND_ICONS: Record<string, string> = {
@@ -335,6 +348,11 @@ editorLayer.on("shortcut", (event) => {
 });
 
 editorLayer.on("key", (key) => {
+  if (activeAlert && alertHandleKey(activeAlert, key.raw)) {
+    activeAlert = null;
+    update();
+    return true;
+  }
   dispatch(key);
   return true;
 });
@@ -350,7 +368,12 @@ editorLayer.on("paste", (event) => {
   return true;
 });
 
-editorLayer.on("mouse:click", (event) => {
+editorLayer.on("mouse:click", (event: MouseEvent) => {
+  if (activeAlert && alertHandleClick(activeAlert, event.x, event.y)) {
+    activeAlert = null;
+    update();
+    return true;
+  }
   stopAutoScroll();
   const { viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
   const gw = gutterWidth(editor.lines.length);
@@ -528,6 +551,24 @@ async function start() {
   process.stdin.setRawMode(true);
   input.start();
   update();
+
+  // async version check - shows a banner if a newer version is available
+  void checkIfUpdateAvailable().then((latest) => {
+    if (!latest) return;
+    activeAlert = createAlert(
+      {
+        type: "info",
+        message: `jano v${latest} available. Run 'jano update' to upgrade.`,
+        position: "top",
+        autoClose: 10000,
+      },
+      () => {
+        activeAlert = null;
+        update();
+      },
+    );
+    update();
+  });
 }
 
 void start();
