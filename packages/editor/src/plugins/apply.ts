@@ -1,6 +1,7 @@
 import type { EditResult } from "./types.ts";
 import type { EditorState } from "../editor.ts";
 import type { CursorManager, SingleCursor } from "../cursor-manager.ts";
+import { log } from "../utils/logger.ts";
 
 // apply edit result, optionally targeting a specific cursor instead of primary
 export function applyEditResult(
@@ -14,10 +15,20 @@ export function applyEditResult(
     const changed =
       result.replaceAll.length !== editor.lines.length ||
       result.replaceAll.some((l, i) => l !== editor.lines[i]);
+    log.debug({
+      action: "plugin_apply_replace_all",
+      lineCountBefore: editor.lines.length,
+      lineCountAfter: result.replaceAll.length,
+      changed,
+    });
     if (changed) {
       editor.lines = result.replaceAll;
       editor.dirty = true;
     }
+  }
+
+  if (result.edits && result.edits.length > 0) {
+    log.debug({ action: "plugin_apply_edits", count: result.edits.length });
   }
 
   if (result.edits) {

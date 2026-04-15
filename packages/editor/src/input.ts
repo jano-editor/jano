@@ -8,6 +8,7 @@ import { wordBoundaryLeft, wordBoundaryRight } from "./cursor-manager.ts";
 import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
+import { callPluginHook } from "./plugins/call.ts";
 import { getEditorSettings } from "./settings.ts";
 
 // strip control characters except \t (0x09) and \n (0x0a)
@@ -56,7 +57,7 @@ function notifyPlugin(
   if (!plugin?.onCursorAction) return;
   const action = buildAction(actionType, c, { line: prevPos.y, col: prevPos.x }, extra);
   const ctx = buildContext(editor, cm, getViewport(cm, screen), action);
-  const result = plugin.onCursorAction(ctx);
+  const result = callPluginHook(plugin, "onCursorAction", () => plugin.onCursorAction!(ctx));
   if (result) applyEditResult(result, editor, cm, c);
 }
 
@@ -89,7 +90,7 @@ export function handleKey(
   if (plugin?.onKeyDown) {
     const keyInfo = { name: key.name, ctrl: !!key.ctrl, alt: !!key.alt, shift: !!key.shift };
     const ctx = buildContext(editor, cm, getViewport(cm, screen));
-    const result = plugin.onKeyDown(keyInfo, ctx);
+    const result = callPluginHook(plugin, "onKeyDown", () => plugin.onKeyDown!(keyInfo, ctx));
     if (result?.handled) {
       if (result.edit) {
         snap(undo, "plugin-key", cm, editor);
@@ -226,7 +227,7 @@ export function handleKey(
       const linesBefore = [...editor.lines];
       snap(undo, "format", cm, editor);
       const ctx = buildContext(editor, cm, getViewport(cm, screen));
-      const result = plugin.onFormat(ctx);
+      const result = callPluginHook(plugin, "onFormat", () => plugin.onFormat!(ctx));
       if (result) applyEditResult(result, editor, cm);
       // only commit if content actually changed
       const changed =

@@ -73,6 +73,8 @@ function saveCache(entry: CacheEntry) {
  * Fails silently (offline, network error, etc.) - returns null.
  */
 export async function checkIfUpdateAvailable(): Promise<string | null> {
+  const { log } = await import("./logger.ts");
+
   if (VERSION === "dev") return "dev";
 
   const cache = loadCache();
@@ -80,16 +82,27 @@ export async function checkIfUpdateAvailable(): Promise<string | null> {
 
   // use cached result if still fresh
   if (cache && now - cache.checkedAt < CHECK_INTERVAL) {
+    log.debug({
+      action: "version_check_cache_hit",
+      current: VERSION,
+      cached: cache.latestVersion,
+      ageMs: now - cache.checkedAt,
+    });
     if (compareVersions(VERSION, cache.latestVersion) < 0) {
       return cache.latestVersion;
     }
     return null;
   }
 
+  log.debug({ action: "version_check_fetch_start", current: VERSION });
+
   // fetch latest from npm
   try {
     const res = await fetch("https://registry.npmjs.org/@jano-editor/editor/latest");
-    if (res.status !== 200) return null;
+    if (res.status !== 200) {
+      log.warn({ action: "version_check_fetch_failed", status: res.status });
+      return null;
+    }
     const pkg: unknown = await res.json();
     if (
       !pkg ||
@@ -97,17 +110,27 @@ export async function checkIfUpdateAvailable(): Promise<string | null> {
       typeof (pkg as NpmPackage).version !== "string" ||
       !(pkg as NpmPackage).version
     ) {
+      log.warn({ action: "version_check_invalid_payload" });
       return null;
     }
     const latestVersion = (pkg as NpmPackage).version;
 
     saveCache({ checkedAt: now, latestVersion });
 
-    if (compareVersions(VERSION, latestVersion) < 0) {
-      return latestVersion;
-    }
-    return null;
-  } catch {
+    const updateAvailable = compareVersions(VERSION, latestVersion) < 0;
+    log.info({
+      action: "version_check_fetch_done",
+      current: VERSION,
+      latest: latestVersion,
+      updateAvailable,
+    });
+
+    return updateAvailable ? latestVersion : null;
+  } catch (err) {
+    log.warn({
+      action: "version_check_network_error",
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

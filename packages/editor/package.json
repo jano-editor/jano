@@ -18,6 +18,7 @@
     "@jano-editor/plugin-types": "workspace:*",
     "@jano-editor/ui": "workspace:*",
     "adm-zip": "^0.5.16",
-    "clipboardy": "^5.3.1"
+    "clipboardy": "^5.3.1",
+    "evlog": "^2.12.0"
   }
 }

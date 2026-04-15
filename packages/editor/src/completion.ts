@@ -1,4 +1,5 @@
 import type { CompletionItem, LanguagePlugin, PluginContext } from "./plugins/types.ts";
+import { callPluginHook } from "./plugins/call.ts";
 
 export interface CompletionState {
   active: boolean;
@@ -94,18 +95,14 @@ export function triggerCompletion(
   const seen = new Set<string>();
 
   if (plugin?.onComplete) {
-    try {
-      const pluginItems = plugin.onComplete(ctx);
-      if (pluginItems) {
-        for (const item of pluginItems) {
-          if (!seen.has(item.label)) {
-            seen.add(item.label);
-            items.push(item);
-          }
+    const pluginItems = callPluginHook(plugin, "onComplete", () => plugin.onComplete!(ctx));
+    if (pluginItems) {
+      for (const item of pluginItems) {
+        if (!seen.has(item.label)) {
+          seen.add(item.label);
+          items.push(item);
         }
       }
-    } catch {
-      // plugin error — continue with buffer completion
     }
   }
 

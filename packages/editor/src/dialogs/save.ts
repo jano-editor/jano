@@ -1,11 +1,22 @@
 import { existsSync } from "node:fs";
 import { showDialog } from "@jano-editor/ui";
 import { saveAs } from "../editor.ts";
+import { log } from "../utils/logger.ts";
 import type { Session } from "./session.ts";
 
 export async function trySave(s: Session, filePath: string): Promise<boolean> {
+  const targetExists = existsSync(filePath);
+  const isOverwriteOther = targetExists && filePath !== s.editor.filePath;
+  log.info({
+    action: "file_save_start",
+    path: filePath,
+    targetExists,
+    isOverwriteOther,
+    lineCount: s.editor.lines.length,
+  });
+
   // overwrite warning if target exists and isn't the current file
-  if (existsSync(filePath) && filePath !== s.editor.filePath) {
+  if (isOverwriteOther) {
     const confirm = await showDialog(
       s.input,
       s.screen,
@@ -21,14 +32,23 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
       },
       s.update,
     );
-    if (confirm.type !== "button" || confirm.value !== "yes") return false;
+    if (confirm.type !== "button" || confirm.value !== "yes") {
+      log.info({ action: "file_save_cancelled", reason: "overwrite_declined", path: filePath });
+      return false;
+    }
   }
 
   try {
     saveAs(s.editor, filePath);
     s.reloadPlugin();
+    log.info({ action: "file_save_done", path: filePath });
     return true;
   } catch (err) {
+    log.error({
+      action: "file_save_failed",
+      path: filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     await showDialog(
       s.input,
       s.screen,
