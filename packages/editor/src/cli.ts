@@ -285,5 +285,8 @@ if (args[0] === "plugin") {
 } else if (args[0] === "update") {
   void handleUpdate();
 } else {
+  // pass the file path to the editor via env var so index.ts doesn't have to
+  // re-parse process.argv (and accidentally pick up flags like --debug)
+  if (args[0]) process.env.JANO_FILE = args[0];
   void import("./index.ts");
 }

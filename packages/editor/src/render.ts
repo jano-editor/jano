@@ -117,6 +117,12 @@ export function render(
   const titleX = Math.floor((w - title.length) / 2);
   draw.text(titleX, 0, title, { fg: [230, 200, 100] });
 
+  // DEBUG badge (left side of title bar) when running in debug mode
+  if (process.env.JANO_DEBUG === "1") {
+    const badge = " DEBUG ";
+    draw.text(2, 0, badge, { fg: [255, 255, 255], bg: [200, 40, 40] });
+  }
+
   // editor version (right side of title bar)
   const editorVersion = process.env.JANO_VERSION;
   if (editorVersion) {

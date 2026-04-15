@@ -1,4 +1,5 @@
 import type { Diagnostic, LanguagePlugin } from "./plugins/types.ts";
+import { log } from "./utils/logger.ts";
 
 const DEBOUNCE_MS = 500;
 
@@ -38,11 +39,26 @@ export function createValidator(plugin: LanguagePlugin | null, onDone?: () => vo
       if (timer) clearTimeout(timer);
 
       const snapshot = [...lines];
+      log.debug({ action: "validator_schedule", plugin: plugin.name, lineCount: snapshot.length });
+
       timer = setTimeout(() => {
+        const start = Date.now();
         try {
           state.diagnostics = plugin.onValidate!(snapshot);
-        } catch {
+          log.debug({
+            action: "validator_run_done",
+            plugin: plugin.name,
+            diagnosticCount: state.diagnostics.length,
+            durationMs: Date.now() - start,
+          });
+        } catch (err) {
           state.diagnostics = [];
+          log.error({
+            action: "validator_run_failed",
+            plugin: plugin.name,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         }
         onDone?.();
       }, DEBOUNCE_MS);

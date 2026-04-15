@@ -15,6 +15,7 @@ import {
   type AlertState,
 } from "@jano-editor/ui";
 import { checkIfUpdateAvailable } from "./utils/version-check.ts";
+import { initDebugLogger, log, getLogFilePath } from "./utils/logger.ts";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
@@ -44,7 +45,7 @@ import {
   showDiagnostics,
 } from "./dialogs/index.ts";
 
-const filePath = process.argv[2] || undefined;
+const filePath = process.env.JANO_FILE || undefined;
 
 const screen = createScreen();
 const draw = createDraw(screen);
@@ -309,6 +310,7 @@ input.registerShortcut("f9", "settings");
 const editorLayer = input.pushLayer("editor");
 
 editorLayer.on("shortcut", (event) => {
+  log.info({ action: "shortcut", shortcut: event.action });
   cancelAutoComplete();
   closeCompletion(comp);
   stopAutoScroll();
@@ -510,34 +512,52 @@ editorLayer.on("resize", () => {
 
 // ----- Init -----
 
-const debug = !!process.env.JANO_DEBUG;
-function log(msg: string) {
-  if (debug) console.log(msg);
-}
-
 async function start() {
+  initDebugLogger();
   const paths = getPaths();
-  log(`[jano] v${process.env.JANO_VERSION || "dev"}`);
-  log(`[jano] config: ${paths.config}`);
-  log(`[jano] plugins: ${paths.plugins}`);
+
+  log.info({
+    action: "startup",
+    version: process.env.JANO_VERSION || "dev",
+    configDir: paths.config,
+    pluginsDir: paths.plugins,
+    logsDir: getLogFilePath(),
+    filePath,
+  });
 
   const loadResult = await initPlugins();
-  log(`[jano] loaded ${loadResult.plugins.length} plugin(s)`);
-  for (const p of loadResult.plugins) {
-    log(
-      `[jano]   ✓ ${p.manifest.name} v${p.manifest.version} (${p.manifest.extensions.join(", ")})`,
-    );
-  }
+  log.info({
+    action: "plugins_loaded",
+    count: loadResult.plugins.length,
+    plugins: loadResult.plugins.map((p) => ({
+      name: p.manifest.name,
+      version: p.manifest.version,
+      extensions: p.manifest.extensions,
+    })),
+  });
   for (const err of loadResult.errors) {
-    log(`[jano]   ✗ ${err.dir}: ${err.error}`);
+    log.error({ action: "plugin_load_failed", dir: err.dir, error: err.error });
   }
   for (const conflict of loadResult.conflicts) {
-    log(`[jano]   ⚠ ${conflict}`);
+    log.warn({ action: "plugin_conflict", message: conflict });
   }
+
+  log.info({
+    action: "editor_init",
+    filePath: filePath || null,
+    isNewFile: editor.isNewFile,
+    lineCount: editor.lines.length,
+  });
 
   if (filePath) {
     reloadPlugin();
-    if (session.plugin) log(`[jano] language: ${session.plugin.name}`);
+    if (session.plugin) {
+      log.info({
+        action: "language_detected",
+        plugin: session.plugin.name,
+        version: session.pluginVersion,
+      });
+    }
   }
 
   if (!process.stdin.isTTY) {
