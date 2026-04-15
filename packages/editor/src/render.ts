@@ -332,8 +332,23 @@ export function render(
 
   screen.hideCursor();
   draw.flush();
+}
 
-  // position terminal cursor on primary (only if visible in viewport)
+/**
+ * Position the terminal cursor on the primary editor cursor.
+ * Call this as the very last step in a render cycle, AFTER all overlays
+ * (completion popup, alert, dialogs, etc.) have been flushed — otherwise
+ * their flushes leave the terminal cursor at the last written cell, which
+ * hides or misplaces the blinking cursor.
+ */
+export function positionCursor(
+  screen: Screen,
+  editor: EditorState,
+  cm: CursorManager,
+  plugin: LanguagePlugin | null,
+) {
+  const { gw, contentTop, viewH, viewW } = getViewDimensions(screen, editor.lines.length, plugin);
+  const p = cm.primary;
   const screenCursorX = 1 + gw + (p.x - cm.scrollX);
   const screenCursorY = contentTop + (p.y - cm.scrollY);
   if (
@@ -344,5 +359,7 @@ export function render(
   ) {
     screen.moveTo(screenCursorX, screenCursorY);
     screen.showCursor();
+  } else {
+    screen.hideCursor();
   }
 }

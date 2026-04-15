@@ -34,6 +34,86 @@ export function closeCompletion(state: CompletionState): void {
   state.prefix = "";
 }
 
+export interface CursorLike {
+  x: number;
+  y: number;
+  anchor: { x: number; y: number } | null;
+}
+
+/**
+ * Apply a completion text at every cursor position.
+ *
+ * For each cursor, the word prefix to the left (matching \w+) is replaced with
+ * the completion text. Cursors are processed top-to-bottom / left-to-right, and
+ * after each edit the positions of the remaining cursors are shifted so that
+ * inserts and deletions stay consistent across multiple cursors on the same line.
+ *
+ * Mutates `lines` and the `cursors` in place.
+ */
+export function applyCompletionAtCursors(
+  lines: string[],
+  cursors: readonly CursorLike[],
+  text: string,
+): void {
+  const sorted = [...cursors].sort((a, b) => {
+    if (a.y !== b.y) return a.y - b.y;
+    return a.x - b.x;
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const c = sorted[i]!;
+    const line = lines[c.y] ?? "";
+
+    // word boundary going left from the cursor
+    let wordStart = c.x;
+    while (wordStart > 0 && /\w/.test(line[wordStart - 1]!)) wordStart--;
+
+    const replacedLen = c.x - wordStart;
+    const before = line.substring(0, wordStart);
+    const after = line.substring(c.x);
+
+    if (text.includes("\n")) {
+      const parts = text.split("\n");
+      lines[c.y] = before + parts[0];
+      for (let k = 1; k < parts.length; k++) {
+        lines.splice(c.y + k, 0, parts[k]! + (k === parts.length - 1 ? after : ""));
+      }
+      const insertedLines = parts.length - 1;
+      const newY = c.y + insertedLines;
+      const newX = parts[parts.length - 1]!.length;
+
+      // shift remaining cursors: on same line-to-right → onto the new last line;
+      // on lines below → shift y down by insertedLines
+      for (let j = i + 1; j < sorted.length; j++) {
+        const o = sorted[j]!;
+        if (o.y === c.y && o.x > c.x) {
+          o.y = newY;
+          o.x = newX + (o.x - c.x);
+        } else if (o.y > c.y) {
+          o.y += insertedLines;
+        }
+      }
+
+      c.y = newY;
+      c.x = newX;
+    } else {
+      lines[c.y] = before + text + after;
+      const delta = text.length - replacedLen;
+
+      // shift remaining cursors on the same line that were to the right of this edit
+      for (let j = i + 1; j < sorted.length; j++) {
+        const o = sorted[j]!;
+        if (o.y === c.y && o.x > c.x) {
+          o.x += delta;
+        }
+      }
+
+      c.x = wordStart + text.length;
+    }
+    c.anchor = null;
+  }
+}
+
 export function filterCompletions(state: CompletionState, prefix: string): void {
   state.prefix = prefix;
   const lower = prefix.toLowerCase();

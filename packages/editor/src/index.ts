@@ -20,12 +20,13 @@ import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
-import { render, getViewDimensions, gutterWidth } from "./render.ts";
+import { render, getViewDimensions, gutterWidth, positionCursor } from "./render.ts";
 import {
   createCompletionState,
   closeCompletion,
   filterCompletions,
   triggerCompletion,
+  applyCompletionAtCursors,
 } from "./completion.ts";
 import { buildContext } from "./plugins/context.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
@@ -88,6 +89,9 @@ function renderView() {
     drawAlert(screen, draw, activeAlert);
     draw.flush();
   }
+  // must be the LAST step of the render cycle: every preceding flush can move
+  // the terminal cursor to the last written cell, which would hide the blink.
+  positionCursor(screen, editor, cm, session.plugin);
 }
 
 const KIND_ICONS: Record<string, string> = {
@@ -186,22 +190,8 @@ function acceptCompletion() {
   if (!item) return;
   const text = item.insertText ?? item.label;
   const p = cm.primary;
-  const line = editor.lines[p.y];
   undo.snapshot("complete", { x: p.x, y: p.y }, editor.lines, cm.saveState());
-  const before = line.substring(0, comp.startX);
-  const after = line.substring(p.x);
-  if (text.includes("\n")) {
-    const parts = text.split("\n");
-    editor.lines[p.y] = before + parts[0];
-    for (let i = 1; i < parts.length; i++) {
-      editor.lines.splice(p.y + i, 0, parts[i] + (i === parts.length - 1 ? after : ""));
-    }
-    p.y += parts.length - 1;
-    p.x = parts[parts.length - 1].length;
-  } else {
-    editor.lines[p.y] = before + text + after;
-    p.x = comp.startX + text.length;
-  }
+  applyCompletionAtCursors(editor.lines, cm.all, text);
   editor.dirty = true;
   undo.commit({ x: p.x, y: p.y }, editor.lines, cm.saveState());
   closeCompletion(comp);
@@ -267,12 +257,18 @@ function dispatch(key: KeyEvent) {
   } else {
     update();
     if (comp.active) {
-      const line = editor.lines[cm.primary.y] ?? "";
-      const prefix = line.substring(comp.startX, cm.primary.x);
-      if (cm.primary.y !== comp.startY || cm.primary.x < comp.startX) {
+      // only keep the popup open when the user is actively typing into the word
+      // being completed: a word character, or a backspace that stays within the word.
+      const isWordChar = !key.ctrl && !key.alt && key.name.length === 1 && /\w/.test(key.name);
+      const isBackspace = key.name === "backspace";
+      const stillInWord = cm.primary.y === comp.startY && cm.primary.x >= comp.startX;
+
+      if (!stillInWord || (!isWordChar && !isBackspace)) {
         closeCompletion(comp);
         renderView();
       } else {
+        const line = editor.lines[cm.primary.y] ?? "";
+        const prefix = line.substring(comp.startX, cm.primary.x);
         filterCompletions(comp, prefix);
         renderView();
       }
@@ -373,6 +369,11 @@ editorLayer.on("mouse:click", (event: MouseEvent) => {
   // alert intercepts click on ✕; onClose callback clears activeAlert and re-renders
   if (activeAlert && alertHandleClick(activeAlert, event.x, event.y)) {
     return true;
+  }
+  // clicking anywhere dismisses the completion popup — the user is navigating, not typing
+  if (comp.active) {
+    cancelAutoComplete();
+    closeCompletion(comp);
   }
   stopAutoScroll();
   const { viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
