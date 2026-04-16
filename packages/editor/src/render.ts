@@ -2,6 +2,7 @@ import type { Screen, Draw, RGB } from "@jano-editor/ui";
 import type { EditorState } from "./editor.ts";
 import type { CursorManager } from "./cursor-manager.ts";
 import type { LanguagePlugin, Diagnostic } from "./plugins/types.ts";
+import type { GitInfo } from "./git.ts";
 import { tokenizeLine } from "./highlight.ts";
 import { tokenColors } from "./plugins/types.ts";
 import { getEditorSettings } from "./settings.ts";
@@ -85,6 +86,7 @@ export function render(
   plugin: LanguagePlugin | null,
   pluginVersion?: string,
   diagnostics?: Diagnostic[],
+  gitInfo?: GitInfo | null,
 ) {
   draw.clear();
 
@@ -247,27 +249,44 @@ export function render(
     fg: editor.dirty ? [229, 192, 123] : [130, 135, 145],
     bg: [45, 50, 60],
   });
-  // right: diagnostics count
+  // right: git, diagnostics & multi-cursor
+  const rightItems: { text: string; fg: RGB }[] = [];
+  if (gitInfo) {
+    const maxBranchLen = 25;
+    const branch =
+      gitInfo.branch.length > maxBranchLen
+        ? gitInfo.branch.substring(0, maxBranchLen - 1) + "…"
+        : gitInfo.branch;
+    let gitLabel = gitInfo.worktree ? `⊙ ${gitInfo.worktree} ` : "";
+    gitLabel += `⎇ ${branch}`;
+    rightItems.push({ text: gitLabel, fg: [100, 180, 220] });
+  }
   if (diagnostics && diagnostics.length > 0) {
     const errors = diagnostics.filter((d) => d.severity === "error").length;
     const warnings = diagnostics.filter((d) => d.severity === "warning").length;
     const parts: string[] = [];
     if (errors > 0) parts.push(`✗ ${errors}`);
     if (warnings > 0) parts.push(`⚠ ${warnings}`);
-    const diagInfo = parts.join("  ") + " ";
-    const diagX = w - diagInfo.length - 1;
-    draw.text(diagX, statusY, diagInfo, {
-      fg: errors > 0 ? [255, 80, 80] : [229, 192, 123],
-      bg: [45, 50, 60],
+    rightItems.push({
+      text: parts.join("  "),
+      fg: errors > 0 ? ([255, 80, 80] as RGB) : ([229, 192, 123] as RGB),
     });
   }
-  // right: multi-cursor info
   if (cm.isMulti) {
-    const multiInfo = `${cm.count} cursors `;
-    draw.text(w - multiInfo.length - 1, statusY, multiInfo, {
-      fg: [100, 200, 255],
-      bg: [45, 50, 60],
-    });
+    rightItems.push({ text: `${cm.count} cursors`, fg: [100, 200, 255] });
+  }
+  const sep = " │ ";
+  const totalRightW =
+    rightItems.reduce((sum, item) => sum + item.text.length, 0) +
+    Math.max(0, rightItems.length - 1) * sep.length;
+  let rightX = w - 1 - totalRightW;
+  for (let i = 0; i < rightItems.length; i++) {
+    if (i > 0) {
+      draw.text(rightX, statusY, sep, { fg: [70, 75, 85], bg: [45, 50, 60] });
+      rightX += sep.length;
+    }
+    draw.text(rightX, statusY, rightItems[i].text, { fg: rightItems[i].fg, bg: [45, 50, 60] });
+    rightX += rightItems[i].text.length;
   }
 
   // shortcut help — fill 1 or 2 rows

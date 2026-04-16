@@ -33,6 +33,7 @@ import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.t
 import { getPaths } from "./plugins/config.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
+import { getGitInfo, type GitInfo } from "./git.ts";
 import {
   type Session,
   trySave,
@@ -55,6 +56,7 @@ const editor = createEditor(filePath);
 const cm = createCursorManager();
 const undo = createUndoManager();
 const comp = createCompletionState();
+let gitInfo: GitInfo | null = null;
 
 const session: Session = {
   screen,
@@ -83,6 +85,7 @@ function renderView() {
     session.plugin,
     session.pluginVersion,
     session.validator.state.diagnostics,
+    gitInfo,
   );
   renderCompletionPopup();
   if (activeAlert && !activeAlert.closed) {
@@ -570,6 +573,12 @@ async function start() {
   process.stdin.setRawMode(true);
   input.start();
   update();
+
+  // async git info — non-blocking, renders when ready
+  void getGitInfo(editor.filePath).then((info) => {
+    gitInfo = info;
+    update();
+  });
 
   // async version check - shows a banner if a newer version is available
   void checkIfUpdateAvailable().then((latest) => {
