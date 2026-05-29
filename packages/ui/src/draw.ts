@@ -1,4 +1,5 @@
 import { fg, bg, reset } from "./color.ts";
+import { graphemes, graphemeWidth } from "./width.ts";
 import type { Screen } from "./screen.ts";
 import type { RGB } from "./color.ts";
 
@@ -98,8 +99,13 @@ export function createDraw(screen: Screen): Draw {
     text(x: number, y: number, text: string, opts: StyleOpts = {}) {
       ensureBuffer();
       const style = buildStyle(opts);
-      for (let i = 0; i < text.length; i++) {
-        set(x + i, y, text[i], style);
+      let col = x;
+      for (const g of graphemes(text)) {
+        const gw = graphemeWidth(g);
+        if (gw === 0) continue;
+        set(col, y, g, style);
+        if (gw === 2) set(col + 1, y, "", style); // continuation cell for a wide glyph
+        col += gw;
       }
     },
 
@@ -165,6 +171,7 @@ export function createDraw(screen: Screen): Draw {
         let lastStyle = "";
         for (let x = 0; x < bufW; x++) {
           const cell = buffer[y][x];
+          if (cell.char === "") continue; // continuation of a wide glyph — already drawn
           if (cell.style !== lastStyle) {
             out += reset + cell.style;
             lastStyle = cell.style;

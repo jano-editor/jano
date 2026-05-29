@@ -1,3 +1,4 @@
+import { sliceWidth, stringWidth } from "./width.ts";
 import type { Draw } from "./draw.ts";
 import type { RGB } from "./color.ts";
 
@@ -69,16 +70,16 @@ export function drawList(draw: Draw, opts: ListOptions): void {
       draw.char(x + col, screenY, " ", { bg: rowBg });
     }
 
-    // draw label
-    const label = item.label.substring(0, width);
+    // draw label (truncate by display columns, not code units)
+    const label = sliceWidth(item.label, width);
     draw.text(x, screenY, label, { fg: rowFg, bg: rowBg });
 
     // draw description on the right if space
     if (item.description) {
-      const descMaxW = width - label.length - 2;
+      const descMaxW = width - stringWidth(label) - 2;
       if (descMaxW > 3) {
-        const desc = item.description.substring(0, descMaxW);
-        draw.text(x + width - desc.length, screenY, desc, {
+        const desc = sliceWidth(item.description, descMaxW);
+        draw.text(x + width - stringWidth(desc), screenY, desc, {
           fg: isDisabled ? disabledFg : isSelected ? selectedFg : descriptionFg,
           bg: rowBg,
         });
