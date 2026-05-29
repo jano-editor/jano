@@ -3,6 +3,7 @@ import type { Draw } from "./draw.ts";
 import type { RGB } from "./color.ts";
 import type { ListItem } from "./list.ts";
 import { drawList, listMoveUp, listMoveDown } from "./list.ts";
+import { sliceWidth } from "./width.ts";
 import type { InputManager, KeyEvent } from "./input-manager.ts";
 
 export interface SearchMatch {
@@ -21,6 +22,8 @@ export interface SearchOptions {
   border?: "single" | "double" | "round";
   width?: number;
   maxResults?: number;
+  /** Hide the replace field and run as a find-only dialog (jump/cancel). */
+  searchOnly?: boolean;
 }
 
 export type SearchResult =
@@ -118,7 +121,8 @@ export function showSearch(
         backgroundDrawn = true;
       }
 
-      const totalH = 5 + listH + 1;
+      const showReplace = !opts.searchOnly;
+      const totalH = (showReplace ? 5 : 4) + listH + 1;
       const x = Math.floor((screen.width - searchW) / 2);
       const y = 1;
       const inputW = searchW - 7;
@@ -129,7 +133,7 @@ export function showSearch(
         fill: theme.fill,
       });
 
-      const titleText = " Search & Replace ";
+      const titleText = showReplace ? " Search & Replace " : " Search ";
       draw.text(x + Math.floor((searchW - titleText.length) / 2), y, titleText, {
         fg: theme.title,
       });
@@ -144,7 +148,7 @@ export function showSearch(
         draw.char(x + 5 + i, searchY, " ", { bg: theme.inputBg });
       }
       if (query.length > 0) {
-        draw.text(x + 5, searchY, query.substring(0, inputW), {
+        draw.text(x + 5, searchY, sliceWidth(query, inputW), {
           fg: theme.inputFg,
           bg: theme.inputBg,
         });
@@ -156,30 +160,33 @@ export function showSearch(
       }
 
       const replaceY = y + 2;
-      draw.text(x + 1, replaceY, "  →", { fg: theme.labelFg, bg: theme.fill });
-      for (let i = 0; i < inputW; i++) {
-        draw.char(x + 5 + i, replaceY, " ", { bg: theme.inputBg });
-      }
-      if (replace.length > 0) {
-        draw.text(x + 5, replaceY, replace.substring(0, inputW), {
-          fg: theme.replaceFg,
-          bg: theme.inputBg,
-        });
-      } else {
-        draw.text(x + 5, replaceY, "Replace...", { fg: theme.placeholder, bg: theme.inputBg });
-      }
-      if (activeField === 1) {
-        draw.char(x + 4, replaceY, "▎", { fg: theme.inputActiveBorder });
+      if (showReplace) {
+        draw.text(x + 1, replaceY, "  →", { fg: theme.labelFg, bg: theme.fill });
+        for (let i = 0; i < inputW; i++) {
+          draw.char(x + 5 + i, replaceY, " ", { bg: theme.inputBg });
+        }
+        if (replace.length > 0) {
+          draw.text(x + 5, replaceY, sliceWidth(replace, inputW), {
+            fg: theme.replaceFg,
+            bg: theme.inputBg,
+          });
+        } else {
+          draw.text(x + 5, replaceY, "Replace...", { fg: theme.placeholder, bg: theme.inputBg });
+        }
+        if (activeField === 1) {
+          draw.char(x + 4, replaceY, "▎", { fg: theme.inputActiveBorder });
+        }
       }
 
-      const hintY = y + 3;
-      const hint =
-        replace.length > 0
+      const hintY = y + (showReplace ? 3 : 2);
+      const hint = showReplace
+        ? replace.length > 0
           ? " Enter=Replace  ^A=All  ↑↓=Nav  Esc=Close"
-          : " Enter=Jump  ↑↓=Navigate  Tab=Replace  Esc=Close";
+          : " Enter=Jump  ↑↓=Navigate  Tab=Replace  Esc=Close"
+        : " Enter=Jump  ↑↓=Navigate  Esc=Close";
       draw.text(x + 1, hintY, hint.substring(0, searchW - 2), { fg: [70, 75, 85], bg: theme.fill });
 
-      const sepY = y + 4;
+      const sepY = y + (showReplace ? 4 : 3);
       for (let i = 1; i < searchW - 1; i++) {
         draw.char(x + i, sepY, "─", { fg: theme.border });
       }
@@ -203,7 +210,7 @@ export function showSearch(
       screen.hideCursor();
       draw.flush();
 
-      if (activeField === 0) {
+      if (activeField === 0 || !showReplace) {
         screen.moveTo(x + 5 + queryCursorX, searchY);
       } else {
         screen.moveTo(x + 5 + replaceCursorX, replaceY);
@@ -266,8 +273,8 @@ export function showSearch(
         return true;
       }
 
-      // tab / shift+tab: switch fields
-      if (key.name === "tab") {
+      // tab / shift+tab: switch fields (only when the replace field exists)
+      if (key.name === "tab" && !opts.searchOnly) {
         activeField = activeField === 0 ? 1 : 0;
         renderSearch();
         return true;
