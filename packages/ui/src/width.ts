@@ -1,7 +1,10 @@
-// Display-width helpers for terminal rendering. The renderer's cell buffer is
-// one column per cell, but emoji and CJK glyphs occupy two columns and
-// combining/zero-width marks occupy none. Heuristic ranges (no dependency) —
-// covers CJK and the common emoji blocks; not every exotic sequence.
+// Display-width helpers for terminal rendering. The cell buffer is one column per cell, but East
+// Asian Wide/Fullwidth and emoji glyphs occupy two columns while combining/format marks occupy none.
+// Widths come from a table generated from the Unicode Character Database (scripts/gen-width.ts →
+// width-data.ts) — the authoritative approach wcwidth / unicode-width use. So narrow text symbols
+// (✓ ✗ ★ …) stay 1 column and only real emoji / CJK stay 2, for every code point, not block-by-block.
+
+import { WIDE, ZERO } from "./width-data.ts";
 
 const seg =
   typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -14,43 +17,24 @@ export function graphemes(text: string): string[] {
   return Array.from(text);
 }
 
-function isZeroWidth(cp: number): boolean {
-  return (
-    cp === 0x200b || // zero-width space
-    cp === 0x200c || // zero-width non-joiner
-    cp === 0x200d || // zero-width joiner
-    (cp >= 0x0300 && cp <= 0x036f) || // combining diacritics
-    (cp >= 0xfe00 && cp <= 0xfe0f) // variation selectors
-  );
-}
-
-function isWide(cp: number): boolean {
-  return (
-    (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
-    cp === 0x2329 ||
-    cp === 0x232a ||
-    (cp >= 0x2600 && cp <= 0x27bf) || // misc symbols + dingbats (✨ ✅ ⚡ …)
-    (cp >= 0x2b00 && cp <= 0x2bff) || // misc symbols and arrows
-    (cp >= 0x2e80 && cp <= 0x303e) || // CJK radicals … Kangxi
-    (cp >= 0x3041 && cp <= 0x33ff) || // Hiragana … CJK compat
-    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
-    (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
-    (cp >= 0xa000 && cp <= 0xa4cf) || // Yi
-    (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
-    (cp >= 0xf900 && cp <= 0xfaff) || // CJK compat ideographs
-    (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK compat forms
-    (cp >= 0xff00 && cp <= 0xff60) || // fullwidth forms
-    (cp >= 0xffe0 && cp <= 0xffe6) ||
-    (cp >= 0x1f000 && cp <= 0x1faff) || // emoji & pictographs
-    (cp >= 0x20000 && cp <= 0x3fffd) // CJK Ext B+
-  );
+/** True if `cp` lies inside a flat, sorted, inclusive [start, end, …] range list. */
+function inRanges(ranges: readonly number[], cp: number): boolean {
+  let lo = 0;
+  let hi = (ranges.length >> 1) - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cp < ranges[mid * 2]) hi = mid - 1;
+    else if (cp > ranges[mid * 2 + 1]) lo = mid + 1;
+    else return true;
+  }
+  return false;
 }
 
 /** Display width of a single code point: 0, 1 or 2 columns. */
 export function charWidth(codePoint: number): number {
-  if (codePoint < 32) return 0;
-  if (isZeroWidth(codePoint)) return 0;
-  if (isWide(codePoint)) return 2;
+  if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0; // C0 / C1 controls
+  if (inRanges(ZERO, codePoint)) return 0;
+  if (inRanges(WIDE, codePoint)) return 2;
   return 1;
 }
 
