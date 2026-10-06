@@ -2,7 +2,8 @@
 
 ## Tech Stack
 
-- TypeScript, Node.js
+- TypeScript 7 (native), Node.js 22
+- Bun for tests and standalone binaries, version pinned in `.bun-version` (CI reads it)
 - pnpm workspace (monorepo)
 - Vite+ (vp) for build, lint, format
 - Custom terminal UI lib (@jano-editor/ui)

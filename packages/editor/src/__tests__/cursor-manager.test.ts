@@ -424,7 +424,7 @@ describe("CursorManager with tabs and wide characters", () => {
 describe("word navigation with unicode", () => {
   const stops = (line: string) => {
     const out: number[] = [];
-    for (let i = 0; i < line.length; ) {
+    for (let i = 0; i < line.length;) {
       const next = wordBoundaryRight(line, i);
       if (next === i) break;
       out.push((i = next));
