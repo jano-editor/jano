@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createCursorManager } from "../cursor-manager.ts";
+import { createCursorManager, wordBoundaryLeft, wordBoundaryRight } from "../cursor-manager.ts";
 
 describe("CursorManager", () => {
   describe("multi-cursor basics", () => {
@@ -418,5 +418,42 @@ describe("CursorManager with tabs and wide characters", () => {
     cm.primary.x = 2; // column 8
     cm.ensureVisible(5, 10, lines, 4);
     expect(cm.scrollX).toBe(4);
+  });
+});
+
+describe("word navigation with unicode", () => {
+  const stops = (line: string) => {
+    const out: number[] = [];
+    for (let i = 0; i < line.length; ) {
+      const next = wordBoundaryRight(line, i);
+      if (next === i) break;
+      out.push((i = next));
+    }
+    return out;
+  };
+
+  it("treats umlauts as part of a word", () => {
+    expect(stops("Grüße aus")).toEqual([6, 9]);
+    expect(wordBoundaryLeft("Grüße", 5)).toBe(0);
+  });
+
+  it("never stops inside a keycap or a combining accent", () => {
+    const line = "1️⃣ café x";
+    expect(stops(line)).toEqual([4, 10, 11]);
+  });
+
+  it("clampAll snaps a cursor out of a surrogate pair", () => {
+    const cm = createCursorManager();
+    cm.primary.x = 1;
+    cm.clampAll(["😀"]);
+    expect(cm.primary.x).toBe(0);
+  });
+
+  it("ensureVisible shows a wide glyph at the right edge completely", () => {
+    const cm = createCursorManager();
+    const lines = ["abcd😀"];
+    cm.primary.x = 4; // emoji at columns 4-5
+    cm.ensureVisible(5, 10, lines, 4);
+    expect(cm.scrollX).toBe(1);
   });
 });

@@ -71,7 +71,16 @@ export function createDraw(screen: Screen): Draw {
 
   function set(x: number, y: number, char: string, style = "") {
     if (x < 0 || y < 0 || x >= bufW || y >= bufH) return;
-    buffer[y][x] = { char, style };
+    const row = buffer[y];
+    // overwriting one half of a wide glyph blanks the other half, otherwise the
+    // orphaned half shifts the rest of the row when flushed
+    if (row[x].char === "" && char !== "" && x > 0) {
+      row[x - 1] = { char: " ", style: row[x - 1].style };
+    }
+    if (row[x].char !== "" && row[x + 1]?.char === "") {
+      row[x + 1] = { char: " ", style: row[x + 1].style };
+    }
+    row[x] = { char, style };
   }
 
   function buildStyle(opts: StyleOpts): string {

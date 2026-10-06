@@ -13,7 +13,7 @@ Website: [janoeditor.dev](https://janoeditor.dev) · Repo: [jano-editor/jano](ht
 - **Full mouse support** — click, double/triple-click, drag-select, scroll, auto-scroll at edges.
 - **Autocomplete with popup** — plugin-driven completions + buffer words.
 - **Inline validation** — errors and warnings from plugins appear right next to the line, F4 for details.
-- **Respects your files** - LF/CRLF and BOM stay as they were, emoji and tabs line up exactly.
+- **Respects your files** - keeps LF/CRLF and BOM (mixed files are normalized), emoji and tabs line up exactly.
 - **Never lose work** - unsaved changes are backed up in the background. After a crash, jano offers to restore them.
 - **Auto-formatting** — F3 runs the active plugin's formatter on the whole document.
 - **Plugin store** — `jano plugin install yaml`, browse at [janoeditor.dev/plugins](https://janoeditor.dev/plugins).

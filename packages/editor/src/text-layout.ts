@@ -110,3 +110,20 @@ export function prevBoundary(line: string, idx: number): number {
   }
   return pos;
 }
+
+/** Word characters for word jumps, double-click and completion. Unlike \w this includes umlauts and accents. */
+export const WORD_CHAR = /[\p{L}\p{N}\p{M}_]/u;
+/** Punctuation and symbols: neither a word character nor whitespace. */
+export const NON_WORD_CHAR = /[^\p{L}\p{N}\p{M}_\s]/u;
+
+/** Moves idx out of the middle of a grapheme: to its start ("left") or its end ("right"). */
+export function snapToBoundary(line: string, idx: number, dir: "left" | "right"): number {
+  if (idx <= 0 || idx >= line.length || SIMPLE.test(line)) return idx;
+  let pos = 0;
+  for (const g of graphemes(line)) {
+    if (pos === idx) return idx;
+    if (idx < pos + g.length) return dir === "left" ? pos : pos + g.length;
+    pos += g.length;
+  }
+  return idx;
+}

@@ -37,7 +37,7 @@ import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
 import { getGitInfo, type GitInfo } from "./git.ts";
-import { colAt, idxAtCol } from "./text-layout.ts";
+import { colAt, idxAtCol, WORD_CHAR, NON_WORD_CHAR } from "./text-layout.ts";
 import {
   type Session,
   trySave,
@@ -227,7 +227,7 @@ function scheduleAutoComplete() {
   const p = cm.primary;
   const line = editor.lines[p.y] ?? "";
   let wordStart = p.x;
-  while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
+  while (wordStart > 0 && WORD_CHAR.test(line[wordStart - 1])) wordStart--;
   if (p.x - wordStart < 2) return;
   autoCompleteTimer = setTimeout(() => {
     autoCompleteTimer = null;
@@ -323,7 +323,7 @@ function dispatch(key: KeyEvent) {
     if (comp.active) {
       // only keep the popup open when the user is actively typing into the word
       // being completed: a word character, or a backspace that stays within the word.
-      const isWordChar = !key.ctrl && !key.alt && key.name.length === 1 && /\w/.test(key.name);
+      const isWordChar = !key.ctrl && !key.alt && key.name.length === 1 && WORD_CHAR.test(key.name);
       const isBackspace = key.name === "backspace";
       const stillInWord = cm.primary.y === comp.startY && cm.primary.x >= comp.startX;
 
@@ -481,8 +481,8 @@ editorLayer.on("mouse:click", (event: MouseEvent) => {
     const line = editor.lines[editorY];
     const ch = line[editorX];
     if (ch !== undefined) {
-      const isWord = /\w/.test(ch);
-      const pattern = isWord ? /\w/ : /[^\w\s]/;
+      const isWord = WORD_CHAR.test(ch);
+      const pattern = isWord ? WORD_CHAR : NON_WORD_CHAR;
       let left = editorX;
       while (left > 0 && pattern.test(line[left - 1])) left--;
       let right = editorX;
