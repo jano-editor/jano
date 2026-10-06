@@ -192,6 +192,8 @@ function detectInstallMethod(): InstallMethod {
 const RELEASES_API = "https://api.github.com/repos/jano-editor/jano/releases";
 const API_TIMEOUT_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+// the last release published without SHA256SUMS, every later one must have them
+const LAST_RELEASE_WITHOUT_CHECKSUMS = "1.0.0-alpha.18";
 
 /** Pages through releases until editor releases show up, ui/plugin-types releases share the repo. */
 async function fetchLatestEditorRelease(): Promise<GithubRelease> {
@@ -224,7 +226,10 @@ function getBinaryAssetName(): string | null {
 async function verifyChecksum(release: GithubRelease, assetName: string, buf: Buffer) {
   const base = `https://github.com/jano-editor/jano/releases/download/${release.tag_name}`;
   if (!release.assets.some((a) => a.name === "SHA256SUMS")) {
-    // releases before checksums were published
+    // a newer release without checksums means a broken or tampered release, not an old one
+    if (compareVersions(editorVersion(release), LAST_RELEASE_WITHOUT_CHECKSUMS) > 0) {
+      throw new Error(`${release.tag_name} has no SHA256SUMS, refusing to install it`);
+    }
     console.log("[jano] No checksums published for this release, skipping verification.");
     return;
   }

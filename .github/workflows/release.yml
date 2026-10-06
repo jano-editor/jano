@@ -215,7 +215,17 @@ jobs:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           VERSION="${{ needs.release.outputs.version }}"
-          sha() { grep " $1\$" bin/SHA256SUMS | cut -d' ' -f1; }
+          # fails the job if a checksum is missing, an empty sha256 would break brew for every user
+          sha() {
+            local hash
+            hash=$(grep " $1\$" bin/SHA256SUMS | cut -d' ' -f1)
+            [[ -n "$hash" ]] || { echo "::error::No checksum for $1" >&2; return 1; }
+            echo "$hash"
+          }
+          SHA_DARWIN_ARM64=$(sha jano-darwin-arm64)
+          SHA_DARWIN_X64=$(sha jano-darwin-x64)
+          SHA_LINUX_X64=$(sha jano-linux-x64)
+          SHA_LINUX_ARM64=$(sha jano-linux-arm64)
 
           if [[ "$DRY_RUN" == "true" ]]; then
             mkdir -p /tmp/homebrew-jano/Formula
@@ -233,22 +243,22 @@ jobs:
             on_macos do
               on_arm do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-darwin-arm64"
-                sha256 "$(sha jano-darwin-arm64)"
+                sha256 "${SHA_DARWIN_ARM64}"
               end
               on_intel do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-darwin-x64"
-                sha256 "$(sha jano-darwin-x64)"
+                sha256 "${SHA_DARWIN_X64}"
               end
             end
 
             on_linux do
               on_intel do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-linux-x64"
-                sha256 "$(sha jano-linux-x64)"
+                sha256 "${SHA_LINUX_X64}"
               end
               on_arm do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-linux-arm64"
-                sha256 "$(sha jano-linux-arm64)"
+                sha256 "${SHA_LINUX_ARM64}"
               end
             end
 
