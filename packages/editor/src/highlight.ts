@@ -42,6 +42,12 @@ function reportFailure(plugin: LanguagePlugin, err: unknown) {
   });
 }
 
+function isToken(t: unknown): t is HighlightToken {
+  if (typeof t !== "object" || t === null) return false;
+  const { start, end, type } = t as HighlightToken;
+  return Number.isFinite(start) && Number.isFinite(end) && typeof type === "string";
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -86,7 +92,7 @@ export function tokenizeLine(
     // custom highlighting takes priority
     if (plugin.highlightLine && lineIndex !== undefined && lines) {
       const tokens = plugin.highlightLine(line, lineIndex, lines);
-      return Array.isArray(tokens) ? tokens : [];
+      return Array.isArray(tokens) ? tokens.filter(isToken) : [];
     }
     if (!plugin.highlight) return [];
     return tokenizeWithPatterns(line, compile(plugin));

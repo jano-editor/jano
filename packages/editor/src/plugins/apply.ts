@@ -11,7 +11,9 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 function isPosition(p: unknown): p is Position {
-  return typeof p === "object" && p !== null && "line" in p && "col" in p;
+  if (typeof p !== "object" || p === null) return false;
+  const { line, col } = p as Position;
+  return Number.isFinite(line) && Number.isFinite(col);
 }
 
 // apply edit result, optionally targeting a specific cursor instead of primary
@@ -54,11 +56,12 @@ export function applyEditResult(
     }
   }
 
-  if (result.edits && result.edits.length > 0) {
-    log.debug({ action: "plugin_apply_edits", count: result.edits.length });
-  }
-
-  if (result.edits) {
+  if (result.edits && !Array.isArray(result.edits)) {
+    problems.push("edits is not an array");
+  } else if (result.edits) {
+    if (result.edits.length > 0) {
+      log.debug({ action: "plugin_apply_edits", count: result.edits.length });
+    }
     const valid = result.edits.filter((edit) => {
       const ok =
         typeof edit?.text === "string" &&

@@ -185,6 +185,25 @@ describe("applyEditResult with invalid plugin results", () => {
     expect(e.lines).toEqual([">abc"]);
   });
 
+  it("skips edits with non-numeric positions instead of clamping them", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    const edits = [
+      { range: { start: { line: "x", col: 0 }, end: { line: 0, col: 0 } }, text: "!" },
+    ] as unknown as NonNullable<Parameters<typeof applyEditResult>[0]["edits"]>;
+    applyEditResult({ edits }, e, cm);
+    expect(e.lines).toEqual(["abc"]);
+    expect(e.dirty).toBe(false);
+  });
+
+  it("ignores edits that are not an array", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    const edits = { range: null, text: "x" } as unknown as [];
+    expect(() => applyEditResult({ edits }, e, cm)).not.toThrow();
+    expect(e.lines).toEqual(["abc"]);
+  });
+
   it("clamps cursors into the buffer", () => {
     const e = makeEditor(["ab", "c"]);
     const cm = createCursorManager();

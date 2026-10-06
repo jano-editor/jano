@@ -82,6 +82,15 @@ describe("tokenizeLine with broken plugins", () => {
     expect(tokenizeLine("x", plugin, 0, ["x"])).toEqual([]);
   });
 
+  it("drops malformed tokens from highlightLine", () => {
+    const plugin = {
+      name: "Partial",
+      extensions: [".partial"],
+      highlightLine: () => [null, { start: 0, end: 1, type: "keyword" }, { start: "a" }],
+    } as unknown as LanguagePlugin;
+    expect(tokenizeLine("x", plugin, 0, ["x"])).toEqual([{ start: 0, end: 1, type: "keyword" }]);
+  });
+
   it("escapes regex characters in keywords", () => {
     const plugin: LanguagePlugin = {
       name: "Cpp",

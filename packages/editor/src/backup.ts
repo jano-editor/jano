@@ -50,6 +50,9 @@ export interface BackupTiming {
 
 const DEFAULT_TIMING: BackupTiming = { idleMs: 2000, maxWaitMs: 10000 };
 
+// "<pid>-<startTime>.json", plus the ".<n>.tmp" / ".sync.tmp" variants while writing
+const BACKUP_NAME = /^(\d+)-\d+\.json(?:\.(?:\d+|sync)\.tmp)?$/;
+
 export function createBackupManager(
   dir: string,
   timing: BackupTiming = DEFAULT_TIMING,
@@ -172,7 +175,9 @@ export function listOrphanedBackups(dir: string): BackupEntry[] {
 
   const entries: BackupEntry[] = [];
   for (const name of names) {
-    const pid = parseInt(name, 10);
+    const match = BACKUP_NAME.exec(name);
+    if (!match) continue;
+    const pid = Number(match[1]);
     if (!pid || pid === process.pid || isAlive(pid)) continue;
 
     // half-written temp files of dead sessions are useless
@@ -184,7 +189,12 @@ export function listOrphanedBackups(dir: string): BackupEntry[] {
 
     try {
       const data = JSON.parse(readFileSync(join(dir, name), "utf8")) as BackupData;
-      if (data.version !== 1 || typeof data.content !== "string") continue;
+      const valid =
+        data.version === 1 &&
+        typeof data.content === "string" &&
+        typeof data.filePath === "string" &&
+        typeof data.savedAt === "number";
+      if (!valid) continue;
       entries.push({ ...data, id: name, lineCount: data.content.split("\n").length });
     } catch (err) {
       log.warn({ action: "backup_read_failed", id: name, error: errorMessage(err) });

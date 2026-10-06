@@ -105,6 +105,23 @@ describe("listOrphanedBackups", () => {
     expect(files()).toEqual([`${DEAD_PID}-1.json`]);
   });
 
+  it("ignores files that don't match the backup name pattern", () => {
+    writeFileSync(join(dir, `${DEAD_PID}abc.json`), "{}");
+    writeFileSync(join(dir, `${DEAD_PID}-1.json.bak`), "{}");
+    expect(listOrphanedBackups(dir)).toEqual([]);
+    expect(files()).toHaveLength(2);
+  });
+
+  it("skips backups with missing or wrongly typed fields", () => {
+    const base = { version: 1, pid: DEAD_PID, content: "x" };
+    writeFileSync(join(dir, `${DEAD_PID}-1.json`), JSON.stringify({ ...base, savedAt: 1 }));
+    writeFileSync(
+      join(dir, `${DEAD_PID}-2.json`),
+      JSON.stringify({ ...base, filePath: "/a", savedAt: "yesterday" }),
+    );
+    expect(listOrphanedBackups(dir)).toEqual([]);
+  });
+
   it("returns an empty list when the dir does not exist", () => {
     expect(listOrphanedBackups(join(dir, "missing"))).toEqual([]);
   });
