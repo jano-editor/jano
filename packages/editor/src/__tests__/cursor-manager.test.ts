@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { createCursorManager } from "../cursor-manager.ts";
+import { createCursorManager, wordBoundaryLeft, wordBoundaryRight } from "../cursor-manager.ts";
 
 describe("CursorManager", () => {
   describe("multi-cursor basics", () => {
@@ -378,5 +378,82 @@ describe("CursorManager", () => {
       expect(cm.primary.x).toBe(0);
       expect(cm.primary.y).toBe(2);
     });
+  });
+});
+
+describe("CursorManager with tabs and wide characters", () => {
+  const EMOJI = "😀";
+
+  it("left/right step over a whole emoji", () => {
+    const cm = createCursorManager();
+    const lines = [`a${EMOJI}b`];
+    cm.primary.x = 1;
+    cm.moveAll("right", lines, 0, 4);
+    expect(cm.primary.x).toBe(3);
+    cm.moveAll("left", lines, 0, 4);
+    expect(cm.primary.x).toBe(1);
+  });
+
+  it("up/down keep the screen column across tabs", () => {
+    const cm = createCursorManager();
+    const lines = ["\tx", "abcdx"];
+    cm.primary.x = 1; // after the tab, column 4
+    cm.moveAll("down", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 4, y: 1 });
+    cm.moveAll("up", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 1, y: 0 });
+  });
+
+  it("up/down keep the screen column across emoji", () => {
+    const cm = createCursorManager();
+    const lines = [`${EMOJI}x`, "abx"];
+    cm.primary.x = 2; // after the emoji, column 2
+    cm.moveAll("down", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 2, y: 1 });
+  });
+
+  it("ensureVisible scrolls by screen columns", () => {
+    const cm = createCursorManager();
+    const lines = ["\t\tx"];
+    cm.primary.x = 2; // column 8
+    cm.ensureVisible(5, 10, lines, 4);
+    expect(cm.scrollX).toBe(4);
+  });
+});
+
+describe("word navigation with unicode", () => {
+  const stops = (line: string) => {
+    const out: number[] = [];
+    for (let i = 0; i < line.length; ) {
+      const next = wordBoundaryRight(line, i);
+      if (next === i) break;
+      out.push((i = next));
+    }
+    return out;
+  };
+
+  it("treats umlauts as part of a word", () => {
+    expect(stops("Grüße aus")).toEqual([6, 9]);
+    expect(wordBoundaryLeft("Grüße", 5)).toBe(0);
+  });
+
+  it("never stops inside a keycap or a combining accent", () => {
+    const line = "1️⃣ café x";
+    expect(stops(line)).toEqual([4, 10, 11]);
+  });
+
+  it("clampAll snaps a cursor out of a surrogate pair", () => {
+    const cm = createCursorManager();
+    cm.primary.x = 1;
+    cm.clampAll(["😀"]);
+    expect(cm.primary.x).toBe(0);
+  });
+
+  it("ensureVisible shows a wide glyph at the right edge completely", () => {
+    const cm = createCursorManager();
+    const lines = ["abcd😀"];
+    cm.primary.x = 4; // emoji at columns 4-5
+    cm.ensureVisible(5, 10, lines, 4);
+    expect(cm.scrollX).toBe(1);
   });
 });

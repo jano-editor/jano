@@ -6,6 +6,12 @@ import type { GitInfo } from "./git.ts";
 import { tokenizeLine } from "./highlight.ts";
 import { tokenColors } from "./plugins/types.ts";
 import { getEditorSettings } from "./settings.ts";
+import { layoutLine, colAt, lineWidth } from "./text-layout.ts";
+
+const DEFAULT_FG: RGB = [171, 178, 191];
+const CONTROL_FG: RGB = [90, 95, 105];
+const SELECTION_BG: RGB = [60, 100, 180];
+const EXTRA_CURSOR_BG: RGB = [200, 200, 200];
 
 function getShortcuts(plugin: LanguagePlugin | null): string[][] {
   const list = [
@@ -132,6 +138,8 @@ export function render(
     draw.text(w - vText.length - 1, 0, vText, { fg: [80, 85, 95] });
   }
 
+  const tabSize = getEditorSettings().tabSize;
+
   // file content
   for (let y = 0; y < viewH; y++) {
     const lineIdx = y + cm.scrollY;
@@ -158,40 +166,59 @@ export function render(
     const line = editor.lines[lineIdx];
     const tokens = tokenizeLine(line, plugin, lineIdx, editor.lines);
 
-    // build color map for this line
-    const colorMap: (RGB | null)[] = Array.from<RGB | null>({ length: line.length }).fill(null);
+    // only the visible part is laid out and colored, so huge lines stay cheap
+    const glyphs = layoutLine(line, tabSize, cm.scrollX, cm.scrollX + viewW);
+    const lo = glyphs.length > 0 ? glyphs[0].idx : 0;
+    const hi = glyphs.length > 0 ? glyphs[glyphs.length - 1].idx + 1 : 0;
+    const colorMap: (RGB | null)[] = Array.from<RGB | null>({ length: hi - lo }).fill(null);
     for (const token of tokens) {
       const color = tokenColors[token.type];
       if (color) {
-        for (let i = token.start; i < token.end && i < line.length; i++) {
-          colorMap[i] = color;
+        for (let i = Math.max(token.start, lo); i < token.end && i < hi; i++) {
+          colorMap[i - lo] = color;
         }
       }
     }
 
-    // draw characters
-    for (let col = 0; col < viewW; col++) {
-      const charIdx = col + cm.scrollX;
-      const screenX = 1 + gw + col;
-      const screenY = contentTop + y;
-      const ch = charIdx < line.length ? line[charIdx] : " ";
+    const screenY = contentTop + y;
+    const errorBg: RGB | undefined = hasError
+      ? [60, 20, 20]
+      : hasWarning
+        ? [50, 40, 15]
+        : undefined;
 
-      if (cm.isCellSelected(lineIdx, charIdx)) {
-        draw.char(screenX, screenY, ch, { fg: [255, 255, 255], bg: [60, 100, 180] });
-      } else if (cm.isCellExtraCursor(lineIdx, charIdx)) {
-        draw.char(screenX, screenY, ch, { fg: [0, 0, 0], bg: [200, 200, 200] });
-      } else if (charIdx < line.length) {
-        const fg = colorMap[charIdx] ?? [171, 178, 191];
-        const errorBg: RGB | undefined = hasError
-          ? [60, 20, 20]
-          : hasWarning
-            ? [50, 40, 15]
-            : undefined;
-        draw.char(screenX, screenY, ch, { fg, bg: errorBg });
-      } else if (hasError || hasWarning) {
-        // fill rest of error line with tinted background
-        draw.char(screenX, screenY, " ", { bg: hasError ? [60, 20, 20] : [50, 40, 15] });
+    // style of the cell at string index idx (idx >= line.length means past the line end)
+    const styleAt = (idx: number, fg: RGB) => {
+      if (cm.isCellSelected(lineIdx, idx)) return { fg: [255, 255, 255] as RGB, bg: SELECTION_BG };
+      if (cm.isCellExtraCursor(lineIdx, idx)) return { fg: [0, 0, 0] as RGB, bg: EXTRA_CURSOR_BG };
+      return { fg, bg: errorBg };
+    };
+
+    // draw glyphs (tabs expanded, wide chars take two cells)
+    for (const g of glyphs) {
+      const start = g.col - cm.scrollX;
+      if (g.width === 0 || start + g.width <= 0) continue;
+      if (start >= viewW) break;
+
+      const style = styleAt(g.idx, g.control ? CONTROL_FG : (colorMap[g.idx - lo] ?? DEFAULT_FG));
+      if (g.width === 2 && start >= 0 && start + 1 < viewW) {
+        draw.text(1 + gw + start, screenY, g.text, style);
+        continue;
       }
+      // narrow glyphs, tab padding, or a wide glyph cut off at the viewport edge
+      for (let c = 0; c < g.width; c++) {
+        const vx = start + c;
+        if (vx < 0 || vx >= viewW) continue;
+        draw.char(1 + gw + vx, screenY, g.width === 1 ? g.text : " ", style);
+      }
+    }
+
+    // past the line end: selection of the line break, extra cursors, error tint
+    const endCol = lineWidth(line, tabSize);
+    for (let vx = Math.max(0, endCol - cm.scrollX); vx < viewW; vx++) {
+      const idx = line.length + (vx + cm.scrollX - endCol);
+      const style = styleAt(idx, DEFAULT_FG);
+      if (style.bg) draw.char(1 + gw + vx, screenY, " ", { bg: style.bg });
     }
   }
 
@@ -210,7 +237,7 @@ export function render(
 
   // horizontal scrollbar (on the bottom border)
   const maxLineLen = Math.max(
-    ...editor.lines.slice(cm.scrollY, cm.scrollY + viewH).map((l) => l.length),
+    ...editor.lines.slice(cm.scrollY, cm.scrollY + viewH).map((l) => lineWidth(l, tabSize)),
     0,
   );
   if (maxLineLen > viewW) {
@@ -231,7 +258,7 @@ export function render(
     draw.char(x, statusY, " ", { bg: [45, 50, 60] });
   }
   // left: cursor position
-  const posInfo = ` Ln ${p.y + 1}, Col ${p.x + 1}`;
+  const posInfo = ` Ln ${p.y + 1}, Col ${colAt(editor.lines[p.y] ?? "", p.x, tabSize) + 1}`;
   draw.text(2, statusY, posInfo, { fg: [180, 185, 195], bg: [45, 50, 60] });
   // plugin info
   if (plugin) {
@@ -243,7 +270,9 @@ export function render(
   }
   // center: file info
   const modified = editor.dirty ? " ●" : "";
-  const fileInfo = `${editor.lines.length} lines${modified}`;
+  // only shown when they differ from the default (LF, no BOM)
+  const format = `${editor.eol === "\r\n" ? " · CRLF" : ""}${editor.bom ? " · BOM" : ""}`;
+  const fileInfo = `${editor.lines.length} lines${format}${modified}`;
   const fileInfoX = Math.floor((w - fileInfo.length) / 2);
   draw.text(fileInfoX, statusY, fileInfo, {
     fg: editor.dirty ? [229, 192, 123] : [130, 135, 145],
@@ -368,7 +397,8 @@ export function positionCursor(
 ) {
   const { gw, contentTop, viewH, viewW } = getViewDimensions(screen, editor.lines.length, plugin);
   const p = cm.primary;
-  const screenCursorX = 1 + gw + (p.x - cm.scrollX);
+  const col = colAt(editor.lines[p.y] ?? "", p.x, getEditorSettings().tabSize);
+  const screenCursorX = 1 + gw + (col - cm.scrollX);
   const screenCursorY = contentTop + (p.y - cm.scrollY);
   if (
     screenCursorY >= contentTop &&

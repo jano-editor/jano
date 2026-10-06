@@ -71,7 +71,16 @@ export function createDraw(screen: Screen): Draw {
 
   function set(x: number, y: number, char: string, style = "") {
     if (x < 0 || y < 0 || x >= bufW || y >= bufH) return;
-    buffer[y][x] = { char, style };
+    const row = buffer[y];
+    // overwriting one half of a wide glyph blanks the other half, otherwise the
+    // orphaned half shifts the rest of the row when flushed
+    if (row[x].char === "" && char !== "" && x > 0) {
+      row[x - 1] = { char: " ", style: row[x - 1].style };
+    }
+    if (row[x].char !== "" && row[x + 1]?.char === "") {
+      row[x + 1] = { char: " ", style: row[x + 1].style };
+    }
+    row[x] = { char, style };
   }
 
   function buildStyle(opts: StyleOpts): string {
@@ -176,7 +185,14 @@ export function createDraw(screen: Screen): Draw {
             out += reset + cell.style;
             lastStyle = cell.style;
           }
-          out += cell.char;
+          if (buffer[y][x + 1]?.char === "") {
+            // terminals disagree on how wide some glyphs are (❤️ often counts as one column).
+            // paint the right half as a styled space first, then draw the glyph over it and
+            // jump to the next cell explicitly instead of trusting the terminal's advance.
+            out += `\x1b[${x + 2}G \x1b[${x + 1}G${cell.char}\x1b[${x + 3}G`;
+          } else {
+            out += cell.char;
+          }
         }
       }
       out += reset;

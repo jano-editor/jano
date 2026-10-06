@@ -38,9 +38,18 @@ export function charWidth(codePoint: number): number {
   return 1;
 }
 
+const VS16 = "️";
+const KEYCAP = "⃣";
+
 /** Display width of a grapheme cluster (based on its leading code point). */
 export function graphemeWidth(grapheme: string): number {
-  return charWidth(grapheme.codePointAt(0) ?? 0);
+  const cp = grapheme.codePointAt(0) ?? 0;
+  // VS16 asks for emoji presentation (❤️ ⚠️ 1️⃣), which terminals draw two columns wide.
+  // a plain ascii base without keycap (e.g. "a" + VS16) stays text.
+  if (grapheme.length > 1 && grapheme.includes(VS16) && (cp >= 0x80 || grapheme.includes(KEYCAP))) {
+    return 2;
+  }
+  return charWidth(cp);
 }
 
 /** Total display width of a string in terminal columns. */

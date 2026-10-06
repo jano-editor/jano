@@ -149,6 +149,14 @@ The render cycle has three steps that MUST happen in order:
 
 Never call `screen.moveTo` / `screen.showCursor` from inside `render()` or an overlay — the subsequent overlay flush will overwrite it.
 
+### Text Layout
+
+- Cursor `x` and all edits use **string indices** (UTF-16). `cm.scrollX`, mouse columns and the terminal cursor use **screen columns**.
+- Convert only through `text-layout.ts` (`colAt`, `idxAtCol`, `layoutLine`, `lineWidth`). Never use `line[x]` or `x - scrollX` for drawing.
+- Tabs expand to tab stops, emoji/CJK take 2 columns, control chars render as control pictures (`␍`). Cursor moves and deletes step by grapheme (`nextBoundary`/`prevBoundary`), word chars are `WORD_CHAR` (unicode-aware, `\w` misses umlauts).
+- Long non-ASCII lines get a cached grapheme index, so render cost stays bound to the viewport.
+- Plugins keep seeing string indices (`col` in the plugin API is a UTF-16 index).
+
 ### Crash Safety
 
 - `utils/crash-guard.ts` restores the terminal on uncaught errors, SIGTERM and SIGHUP, and writes a final backup first.

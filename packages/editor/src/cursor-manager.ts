@@ -1,4 +1,13 @@
 import type { Pos, SelectionRange } from "./types.ts";
+import {
+  colAt,
+  idxAtCol,
+  nextBoundary,
+  prevBoundary,
+  snapToBoundary,
+  WORD_CHAR,
+  NON_WORD_CHAR,
+} from "./text-layout.ts";
 
 export interface SingleCursor {
   x: number;
@@ -57,11 +66,12 @@ export interface CursorManager {
   // run a function on every cursor, any order (for navigation)
   forEachAll(fn: (c: SingleCursor, isPrimary: boolean) => void): void;
 
-  // move all cursors
+  // move all cursors (up/down keep the screen column, so tabSize is needed)
   moveAll(
     direction: "up" | "down" | "left" | "right" | "home" | "end" | "pageup" | "pagedown",
     lines: string[],
     pageSize: number,
+    tabSize: number,
   ): void;
 
   // move all cursors by word
@@ -76,8 +86,8 @@ export interface CursorManager {
   // remove duplicate cursors
   dedup(): void;
 
-  // ensure primary cursor is visible in viewport
-  ensureVisible(viewW: number, viewH: number): void;
+  // ensure primary cursor is visible in viewport (scrollX is in screen columns)
+  ensureVisible(viewW: number, viewH: number, lines: string[], tabSize: number): void;
 
   // delete the selection of a specific cursor from lines
   deleteSelection(c: SingleCursor, lines: string[]): void;
@@ -87,29 +97,38 @@ export interface CursorManager {
 }
 
 // word boundary utils
-function wordBoundaryLeft(line: string, col: number): number {
+function rawWordLeft(line: string, col: number): number {
   if (col <= 0) return 0;
   let i = col - 1;
   while (i > 0 && /\s/.test(line[i])) i--;
-  if (i >= 0 && /[^\w\s]/.test(line[i])) {
-    while (i > 0 && /[^\w\s]/.test(line[i - 1])) i--;
+  if (i >= 0 && NON_WORD_CHAR.test(line[i])) {
+    while (i > 0 && NON_WORD_CHAR.test(line[i - 1])) i--;
     return i;
   }
-  while (i > 0 && /\w/.test(line[i - 1])) i--;
+  while (i > 0 && WORD_CHAR.test(line[i - 1])) i--;
   return i;
 }
 
-function wordBoundaryRight(line: string, col: number): number {
+function rawWordRight(line: string, col: number): number {
   const len = line.length;
   if (col >= len) return len;
   let i = col;
-  if (/\w/.test(line[i])) {
-    while (i < len && /\w/.test(line[i])) i++;
-  } else if (/[^\w\s]/.test(line[i])) {
-    while (i < len && /[^\w\s]/.test(line[i])) i++;
+  if (WORD_CHAR.test(line[i])) {
+    while (i < len && WORD_CHAR.test(line[i])) i++;
+  } else if (NON_WORD_CHAR.test(line[i])) {
+    while (i < len && NON_WORD_CHAR.test(line[i])) i++;
   }
   while (i < len && /\s/.test(line[i])) i++;
   return i;
+}
+
+// word jumps classify single code units, so snap the result out of a grapheme (1️⃣, e + accent)
+function wordBoundaryLeft(line: string, col: number): number {
+  return snapToBoundary(line, rawWordLeft(line, col), "left");
+}
+
+function wordBoundaryRight(line: string, col: number): number {
+  return snapToBoundary(line, rawWordRight(line, col), "right");
 }
 
 function getSelRange(c: SingleCursor): SelectionRange | null {
@@ -136,10 +155,12 @@ function clampCursor(c: SingleCursor, lines: string[]) {
   const lineLen = lines[c.y].length;
   if (c.x < 0) c.x = 0;
   if (c.x > lineLen) c.x = lineLen;
+  // positions from plugins, search or undo may point into an emoji
+  c.x = snapToBoundary(lines[c.y], c.x, "left");
 }
 
 function moveLeftOne(c: SingleCursor, lines: string[]) {
-  if (c.x > 0) c.x--;
+  if (c.x > 0) c.x = prevBoundary(lines[c.y], c.x);
   else if (c.y > 0) {
     c.y--;
     c.x = lines[c.y].length;
@@ -147,7 +168,7 @@ function moveLeftOne(c: SingleCursor, lines: string[]) {
 }
 
 function moveRightOne(c: SingleCursor, lines: string[]) {
-  if (c.x < lines[c.y].length) c.x++;
+  if (c.x < lines[c.y].length) c.x = nextBoundary(lines[c.y], c.x);
   else if (c.y < lines.length - 1) {
     c.y++;
     c.x = 0;
@@ -278,14 +299,20 @@ export function createCursorManager(): CursorManager {
       cursors.forEach((c, i) => fn(c, i === 0));
     },
 
-    moveAll(direction, lines, pageSize) {
+    moveAll(direction, lines, pageSize, tabSize) {
+      // vertical moves keep the screen column, not the string index (tabs, wide chars)
+      const moveVertical = (c: SingleCursor, dy: number) => {
+        const col = colAt(lines[c.y] ?? "", c.x, tabSize);
+        c.y = Math.max(0, Math.min(lines.length - 1, c.y + dy));
+        c.x = idxAtCol(lines[c.y], col, tabSize);
+      };
       for (const c of cursors) {
         switch (direction) {
           case "up":
-            c.y--;
+            moveVertical(c, -1);
             break;
           case "down":
-            c.y++;
+            moveVertical(c, 1);
             break;
           case "left":
             moveLeftOne(c, lines);
@@ -300,10 +327,10 @@ export function createCursorManager(): CursorManager {
             c.x = lines[c.y]?.length ?? 0;
             break;
           case "pageup":
-            c.y -= pageSize;
+            moveVertical(c, -pageSize);
             break;
           case "pagedown":
-            c.y += pageSize;
+            moveVertical(c, pageSize);
             break;
         }
       }
@@ -369,12 +396,16 @@ export function createCursorManager(): CursorManager {
       }
     },
 
-    ensureVisible(viewW, viewH) {
+    ensureVisible(viewW, viewH, lines, tabSize) {
       const p = cursors[0];
       if (p.y < scrollY) scrollY = p.y;
       if (p.y >= scrollY + viewH) scrollY = p.y - viewH + 1;
-      if (p.x < scrollX) scrollX = p.x;
-      if (p.x >= scrollX + viewW) scrollX = p.x - viewW + 1;
+      const line = lines[p.y] ?? "";
+      const col = colAt(line, p.x, tabSize);
+      // the whole glyph under the cursor must fit, a wide one would be drawn cut off
+      const lastCol = Math.max(col, colAt(line, nextBoundary(line, p.x), tabSize) - 1);
+      if (col < scrollX) scrollX = col;
+      if (lastCol >= scrollX + viewW) scrollX = lastCol - viewW + 1;
     },
 
     deleteSelection(c, lines) {
@@ -401,12 +432,13 @@ export function createCursorManager(): CursorManager {
       if (!last.anchor) {
         const line = lines[last.y] ?? "";
         const x = last.x;
-        const onWord = (x < line.length && /\w/.test(line[x])) || (x > 0 && /\w/.test(line[x - 1]));
+        const onWord =
+          (x < line.length && WORD_CHAR.test(line[x])) || (x > 0 && WORD_CHAR.test(line[x - 1]));
         if (!onWord) return false;
         let start = x;
-        while (start > 0 && /\w/.test(line[start - 1])) start--;
+        while (start > 0 && WORD_CHAR.test(line[start - 1])) start--;
         let end = x;
-        while (end < line.length && /\w/.test(line[end])) end++;
+        while (end < line.length && WORD_CHAR.test(line[end])) end++;
         last.anchor = { x: start, y: last.y };
         last.x = end;
         return true;

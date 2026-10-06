@@ -37,6 +37,7 @@ import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
 import { getGitInfo, type GitInfo } from "./git.ts";
+import { colAt, idxAtCol, WORD_CHAR, NON_WORD_CHAR } from "./text-layout.ts";
 import {
   type Session,
   trySave,
@@ -121,12 +122,19 @@ function kindIcon(kind: string): string {
   return KIND_ICONS[kind] ?? kind.charAt(0);
 }
 
+// screen x of a mouse event to the string index under it on line y
+function mouseToIndex(screenX: number, y: number, gw: number): number {
+  const col = Math.max(0, screenX - 1 - gw + cm.scrollX);
+  return idxAtCol(editor.lines[y] ?? "", col, getEditorSettings().tabSize);
+}
+
 function renderCompletionPopup() {
   if (!comp.active || comp.filtered.length === 0) return;
   const gw = gutterWidth(editor.lines.length);
   const p = cm.primary;
+  const col = colAt(editor.lines[p.y], p.x, getEditorSettings().tabSize);
   drawPopup(draw, {
-    x: 1 + gw + (p.x - cm.scrollX),
+    x: 1 + gw + (col - cm.scrollX),
     y: 1 + (p.y - cm.scrollY),
     screenW: screen.width,
     screenH: screen.height,
@@ -142,7 +150,7 @@ function renderCompletionPopup() {
 
 function update() {
   const { viewW, viewH } = getViewDimensions(screen, editor.lines.length, session.plugin);
-  cm.ensureVisible(viewW, viewH);
+  cm.ensureVisible(viewW, viewH, editor.lines, getEditorSettings().tabSize);
   renderView();
   session.validator.schedule(editor.lines);
   backup.schedule(editor);
@@ -219,7 +227,7 @@ function scheduleAutoComplete() {
   const p = cm.primary;
   const line = editor.lines[p.y] ?? "";
   let wordStart = p.x;
-  while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
+  while (wordStart > 0 && WORD_CHAR.test(line[wordStart - 1])) wordStart--;
   if (p.x - wordStart < 2) return;
   autoCompleteTimer = setTimeout(() => {
     autoCompleteTimer = null;
@@ -315,7 +323,7 @@ function dispatch(key: KeyEvent) {
     if (comp.active) {
       // only keep the popup open when the user is actively typing into the word
       // being completed: a word character, or a backspace that stays within the word.
-      const isWordChar = !key.ctrl && !key.alt && key.name.length === 1 && /\w/.test(key.name);
+      const isWordChar = !key.ctrl && !key.alt && key.name.length === 1 && WORD_CHAR.test(key.name);
       const isBackspace = key.name === "backspace";
       const stillInWord = cm.primary.y === comp.startY && cm.primary.x >= comp.startX;
 
@@ -446,10 +454,7 @@ editorLayer.on("mouse:click", (event: MouseEvent) => {
   const gw = gutterWidth(editor.lines.length);
   const contentTop = 1;
   const editorY = Math.min(event.y - contentTop + cm.scrollY, editor.lines.length - 1);
-  const editorX = Math.min(
-    Math.max(0, event.x - 1 - gw + cm.scrollX),
-    editor.lines[editorY]?.length ?? 0,
-  );
+  const editorX = mouseToIndex(event.x, editorY, gw);
 
   if (event.y < contentTop || event.y >= contentTop + viewH || event.x <= gw) return true;
 
@@ -476,8 +481,8 @@ editorLayer.on("mouse:click", (event: MouseEvent) => {
     const line = editor.lines[editorY];
     const ch = line[editorX];
     if (ch !== undefined) {
-      const isWord = /\w/.test(ch);
-      const pattern = isWord ? /\w/ : /[^\w\s]/;
+      const isWord = WORD_CHAR.test(ch);
+      const pattern = isWord ? WORD_CHAR : NON_WORD_CHAR;
       let left = editorX;
       while (left > 0 && pattern.test(line[left - 1])) left--;
       let right = editorX;
@@ -534,10 +539,7 @@ editorLayer.on("mouse:drag", (event) => {
   }
 
   const editorY = Math.min(Math.max(0, event.y - contentTop + cm.scrollY), maxLine);
-  const editorX = Math.min(
-    Math.max(0, event.x - 1 - gw + cm.scrollX),
-    editor.lines[editorY]?.length ?? 0,
-  );
+  const editorX = mouseToIndex(event.x, editorY, gw);
   const p = cm.primary;
   if (!p.anchor) p.anchor = { x: p.x, y: p.y };
   p.y = editorY;
@@ -614,6 +616,8 @@ async function start() {
     filePath: filePath || null,
     isNewFile: editor.isNewFile,
     lineCount: editor.lines.length,
+    eol: editor.eol === "\r\n" ? "crlf" : "lf",
+    bom: editor.bom,
   });
 
   if (filePath) {

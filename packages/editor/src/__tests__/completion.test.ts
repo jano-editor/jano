@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { applyCompletionAtCursors, type CursorLike } from "../completion.ts";
+import {
+  applyCompletionAtCursors,
+  getBufferWordCompletions,
+  type CursorLike,
+} from "../completion.ts";
 
 function cursor(x: number, y: number): CursorLike {
   return { x, y, anchor: null };
@@ -88,5 +92,12 @@ describe("applyCompletionAtCursors", () => {
 
     expect(lines).toEqual(["hello world"]);
     expect(cursors[0]!.x).toBe(11);
+  });
+});
+
+describe("getBufferWordCompletions", () => {
+  it("completes words with umlauts as a whole", () => {
+    const lines = ["Größe Grüße", "Gr"];
+    expect(getBufferWordCompletions(lines, 1, 2).map((i) => i.label)).toEqual(["Größe", "Grüße"]);
   });
 });

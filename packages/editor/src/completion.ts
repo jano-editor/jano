@@ -1,4 +1,5 @@
 import type { CompletionItem, LanguagePlugin, PluginContext } from "./plugins/types.ts";
+import { WORD_CHAR } from "./text-layout.ts";
 import { callPluginHook } from "./plugins/call.ts";
 
 export interface CompletionState {
@@ -43,7 +44,7 @@ export interface CursorLike {
 /**
  * Apply a completion text at every cursor position.
  *
- * For each cursor, the word prefix to the left (matching \w+) is replaced with
+ * For each cursor, the word prefix to the left (word characters) is replaced with
  * the completion text. Cursors are processed top-to-bottom / left-to-right, and
  * after each edit the positions of the remaining cursors are shifted so that
  * inserts and deletions stay consistent across multiple cursors on the same line.
@@ -66,7 +67,7 @@ export function applyCompletionAtCursors(
 
     // word boundary going left from the cursor
     let wordStart = c.x;
-    while (wordStart > 0 && /\w/.test(line[wordStart - 1]!)) wordStart--;
+    while (wordStart > 0 && WORD_CHAR.test(line[wordStart - 1]!)) wordStart--;
 
     const replacedLen = c.x - wordStart;
     const before = line.substring(0, wordStart);
@@ -140,7 +141,7 @@ export function getBufferWordCompletions(
   // extract the partial word at cursor
   const line = lines[cursorLine] ?? "";
   let wordStart = cursorCol;
-  while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
+  while (wordStart > 0 && WORD_CHAR.test(line[wordStart - 1])) wordStart--;
   const partial = line.substring(wordStart, cursorCol);
   if (partial.length === 0) return [];
 
@@ -149,7 +150,7 @@ export function getBufferWordCompletions(
   for (const l of lines) {
     // match all words in the line
     let match: RegExpExecArray | null;
-    const re = /\b\w{2,}\b/g;
+    const re = /[\p{L}\p{N}\p{M}_]{2,}/gu;
     while ((match = re.exec(l)) !== null) {
       const word = match[0];
       if (word.toLowerCase().startsWith(lower) && word !== partial && !seen.has(word)) {
@@ -202,7 +203,7 @@ export function triggerCompletion(
   // find the prefix (partial word before cursor)
   const line = lines[cursorLine] ?? "";
   let wordStart = cursorCol;
-  while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
+  while (wordStart > 0 && WORD_CHAR.test(line[wordStart - 1])) wordStart--;
 
   state.active = true;
   state.items = items;

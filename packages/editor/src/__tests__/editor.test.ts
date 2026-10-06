@@ -11,6 +11,8 @@ import {
   moveLinesDown,
   insertTab,
   saveAs,
+  parseContent,
+  serializeContent,
 } from "../editor.ts";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
 
@@ -133,18 +135,52 @@ describe("editor operations", () => {
   });
 
   describe("insertTab", () => {
-    it("defaults to 2 spaces", () => {
+    it("defaults to a tab size of 2", () => {
       const e = makeEditor(["abc"]);
-      const newX = insertTab(e, 1, 0);
-      expect(e.lines[0]).toBe("a  bc");
-      expect(newX).toBe(3);
+      const newX = insertTab(e, 0, 0);
+      expect(e.lines[0]).toBe("  abc");
+      expect(newX).toBe(2);
     });
 
-    it("inserts tabSize spaces when insertSpaces=true", () => {
+    it("fills spaces up to the next tab stop", () => {
       const e = makeEditor(["abc"]);
       const newX = insertTab(e, 1, 0, 4, true);
-      expect(e.lines[0]).toBe("a    bc");
-      expect(newX).toBe(5);
+      expect(e.lines[0]).toBe("a   bc");
+      expect(newX).toBe(4);
+    });
+
+    it("inserts a full tab size when already on a tab stop", () => {
+      const e = makeEditor(["abcd"]);
+      insertTab(e, 4, 0, 4, true);
+      expect(e.lines[0]).toBe("abcd    ");
+    });
+
+    it("lines up after text of different length", () => {
+      const a = makeEditor(["asd"]);
+      const b = makeEditor([""]);
+      insertTab(a, 3, 0, 4, true);
+      insertTab(b, 0, 0, 4, true);
+      expect(a.lines[0].length).toBe(b.lines[0].length);
+    });
+
+    it("counts emoji as two columns", () => {
+      const e = makeEditor(["😀"]); // 2 columns, so 2 more spaces to reach column 4
+      insertTab(e, 2, 0, 4, true);
+      expect(e.lines[0]).toBe("😀  ");
+    });
+
+    it("counts a real tab before the cursor", () => {
+      const e = makeEditor(["\tx"]); // x at column 4
+      insertTab(e, 2, 0, 4, true);
+      expect(e.lines[0]).toBe("\tx   ");
+    });
+
+    it("never inserts zero or negative spaces for a broken tab size", () => {
+      for (const size of [0, -4, Number.NaN, 2.5]) {
+        const e = makeEditor(["ab"]);
+        const newX = insertTab(e, 2, 0, size, true);
+        expect(newX).toBeGreaterThan(2);
+      }
     });
 
     it("inserts a real tab when insertSpaces=false", () => {
@@ -177,5 +213,69 @@ describe("saveAs", () => {
     expect(() => saveAs(e, "/nonexistent-dir/file.txt")).toThrow();
     expect(e.filePath).toBe("");
     expect(e.dirty).toBe(true);
+  });
+});
+
+describe("grapheme-aware deletion", () => {
+  const EMOJI = "😀";
+
+  it("backspace removes a whole emoji", () => {
+    const e = makeEditor([`a${EMOJI}b`]);
+    const pos = deleteCharBack(e, 3, 0);
+    expect(e.lines).toEqual(["ab"]);
+    expect(pos).toEqual({ x: 1, y: 0 });
+  });
+
+  it("delete removes a whole emoji", () => {
+    const e = makeEditor([`a${EMOJI}b`]);
+    deleteCharForward(e, 1, 0);
+    expect(e.lines).toEqual(["ab"]);
+  });
+
+  it("never leaves a lone surrogate behind", () => {
+    const e = makeEditor([EMOJI]);
+    deleteCharBack(e, 2, 0);
+    expect(e.lines).toEqual([""]);
+  });
+});
+
+describe("file format", () => {
+  const roundtrip = (raw: string) => serializeContent(parseContent(raw));
+
+  it("keeps files byte-identical on open + save", () => {
+    for (const raw of [
+      "a\nb\n",
+      "a\nb",
+      "a\r\nb\r\n",
+      "a\r\nb",
+      "\uFEFFa\r\nb\r\n",
+      "\uFEFFa\nb",
+      "",
+      "\n",
+      "\r\n",
+    ]) {
+      expect(roundtrip(raw)).toBe(raw);
+    }
+  });
+
+  it("strips CR from lines of CRLF files", () => {
+    const { lines, eol } = parseContent("a\r\nb\r\n");
+    expect(lines).toEqual(["a", "b", ""]);
+    expect(eol).toBe("\r\n");
+  });
+
+  it("strips the BOM from the first line", () => {
+    const { lines, bom } = parseContent("\uFEFFhello");
+    expect(lines).toEqual(["hello"]);
+    expect(bom).toBe(true);
+  });
+
+  it("normalizes mixed files to the more common line ending", () => {
+    expect(roundtrip("a\r\nb\r\nc\n")).toBe("a\r\nb\r\nc\r\n");
+    expect(roundtrip("a\nb\nc\r\n")).toBe("a\nb\nc\n");
+  });
+
+  it("leaves lone CR (not followed by LF) in the line", () => {
+    expect(parseContent("a\rb\n").lines).toEqual(["a\rb", ""]);
   });
 });
