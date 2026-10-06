@@ -16,6 +16,7 @@ import {
 } from "@jano-editor/ui";
 import { checkIfUpdateAvailable } from "./utils/version-check.ts";
 import { initDebugLogger, log, getLogFilePath } from "./utils/logger.ts";
+import { installCrashGuard } from "./utils/crash-guard.ts";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
@@ -570,6 +571,7 @@ async function start() {
   }
 
   screen.enter();
+  installCrashGuard(screen);
   process.stdin.setRawMode(true);
   input.start();
   update();
