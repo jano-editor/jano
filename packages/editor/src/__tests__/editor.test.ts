@@ -10,6 +10,7 @@ import {
   moveLinesUp,
   moveLinesDown,
   insertTab,
+  saveAs,
 } from "../editor.ts";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
 
@@ -166,5 +167,15 @@ describe("editor operations", () => {
       insertTab(e, 0, 0);
       expect(e.dirty).toBe(true);
     });
+  });
+});
+
+describe("saveAs", () => {
+  it("keeps filePath and dirty state when the write fails", () => {
+    const e = makeEditor(["hello"]);
+    e.dirty = true;
+    expect(() => saveAs(e, "/nonexistent-dir/file.txt")).toThrow();
+    expect(e.filePath).toBe("");
+    expect(e.dirty).toBe(true);
   });
 });

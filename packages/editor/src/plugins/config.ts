@@ -26,6 +26,7 @@ export interface JanoPaths {
   data: string;
   plugins: string;
   cache: string;
+  backups: string;
 }
 
 function resolvePaths(): JanoPaths {
@@ -37,6 +38,7 @@ function resolvePaths(): JanoPaths {
       data: base,
       plugins: join(base, "plugins"),
       cache: join(base, "cache"),
+      backups: join(base, "backups"),
     };
   }
 
@@ -57,6 +59,7 @@ function resolvePaths(): JanoPaths {
       data,
       plugins: join(data, "plugins"),
       cache: join(localAppData, "jano", "cache"),
+      backups: join(data, "backups"),
     };
   }
 
@@ -67,6 +70,7 @@ function resolvePaths(): JanoPaths {
       data: appSupport,
       plugins: join(appSupport, "plugins"),
       cache: join(home, "Library", "Caches", "jano"),
+      backups: join(appSupport, "backups"),
     };
   }
 
@@ -80,12 +84,16 @@ function resolvePaths(): JanoPaths {
     join(home, ".local", "share");
   const cacheDir =
     (!isSnapped(process.env.XDG_CACHE_HOME) && process.env.XDG_CACHE_HOME) || join(home, ".cache");
+  const stateDir =
+    (!isSnapped(process.env.XDG_STATE_HOME) && process.env.XDG_STATE_HOME) ||
+    join(home, ".local", "state");
 
   return {
     config: join(configDir, "jano"),
     data: join(dataDir, "jano"),
     plugins: join(dataDir, "jano", "plugins"),
     cache: join(cacheDir, "jano"),
+    backups: join(stateDir, "jano", "backups"),
   };
 }
 
@@ -102,6 +110,9 @@ export function getPluginsDir(): string {
 }
 export function getCacheDir(): string {
   return paths.cache;
+}
+export function getBackupsDir(): string {
+  return paths.backups;
 }
 export function getConfigPath(): string {
   return join(paths.config, "config.json");

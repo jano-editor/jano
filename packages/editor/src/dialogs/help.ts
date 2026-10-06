@@ -15,6 +15,7 @@ export async function showHelp(s: Session): Promise<void> {
     "  Ctrl+A        Select All",
     "  Ctrl+F        Search & Replace",
     "  Ctrl+G        Go to Line",
+    "  Ctrl+R        Recover Unsaved Files",
     "  Ctrl+D        Select Next Occurrence",
     "  Ctrl+Shift+↕  Multi-Cursor",
     "  Shift+Arrow   Select",

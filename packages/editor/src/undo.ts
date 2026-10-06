@@ -51,6 +51,8 @@ export interface UndoManager {
   getHistory(): readonly UndoEntry[];
   describeEntry(entry: UndoEntry): string;
   jumpTo(index: number, lines: string[], cursor: Pos): string[];
+  /** Drops all history, e.g. when a different buffer is loaded. */
+  clear(): void;
 }
 
 function truncate(s: string, max: number): string {
@@ -259,6 +261,12 @@ export function createUndoManager(): UndoManager {
 
     getHistory(): readonly UndoEntry[] {
       return undoStack;
+    },
+
+    clear() {
+      undoStack.length = 0;
+      redoStack.length = 0;
+      hasPending = false;
     },
 
     describeEntry(entry: UndoEntry): string {

@@ -27,6 +27,20 @@ describe("UndoManager", () => {
     expect(cursor.x).toBe(5);
   });
 
+  it("clear drops undo and redo history", () => {
+    const um = createUndoManager();
+    um.snapshot("type", { x: 0, y: 0 }, ["a"]);
+    um.commit({ x: 1, y: 0 }, ["ab"]);
+    um.snapshot("type", { x: 1, y: 0 }, ["ab"]);
+    um.commit({ x: 2, y: 0 }, ["abc"]);
+    um.undo(["abc"], { x: 2, y: 0 });
+
+    um.clear();
+    expect(um.getHistory()).toHaveLength(0);
+    expect(um.undo(["ab"], { x: 1, y: 0 })).toBeNull();
+    expect(um.redo(["ab"], { x: 1, y: 0 })).toBeNull();
+  });
+
   it("redo re-applies after undo", () => {
     const um = createUndoManager();
 

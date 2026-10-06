@@ -10,12 +10,14 @@ import {
   drawAlert,
   alertHandleKey,
   alertHandleClick,
+  closeAlert,
   type KeyEvent,
   type MouseEvent,
   type AlertState,
 } from "@jano-editor/ui";
 import { checkIfUpdateAvailable } from "./utils/version-check.ts";
 import { initDebugLogger, log, getLogFilePath } from "./utils/logger.ts";
+import { installCrashGuard } from "./utils/crash-guard.ts";
 import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
@@ -30,7 +32,8 @@ import {
 } from "./completion.ts";
 import { buildContext } from "./plugins/context.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
-import { getPaths } from "./plugins/config.ts";
+import { getPaths, getBackupsDir } from "./plugins/config.ts";
+import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
 import { getGitInfo, type GitInfo } from "./git.ts";
@@ -45,6 +48,7 @@ import {
   showHelp,
   showSettings,
   showDiagnostics,
+  showRecovery,
 } from "./dialogs/index.ts";
 
 const filePath = process.env.JANO_FILE || undefined;
@@ -56,6 +60,7 @@ const editor = createEditor(filePath);
 const cm = createCursorManager();
 const undo = createUndoManager();
 const comp = createCompletionState();
+const backup = createBackupManager(getBackupsDir());
 let gitInfo: GitInfo | null = null;
 
 const session: Session = {
@@ -66,6 +71,7 @@ const session: Session = {
   cm,
   undo,
   validator: createValidator(null),
+  backup,
   plugin: null,
   pluginVersion: undefined,
   update,
@@ -75,6 +81,7 @@ const session: Session = {
 // ----- Rendering -----
 
 let activeAlert: AlertState | null = null;
+let recoveryAlert: AlertState | null = null;
 
 function renderView() {
   render(
@@ -88,9 +95,11 @@ function renderView() {
     gitInfo,
   );
   renderCompletionPopup();
-  if (activeAlert && !activeAlert.closed) {
-    drawAlert(screen, draw, activeAlert);
-    draw.flush();
+  for (const alert of [activeAlert, recoveryAlert]) {
+    if (alert && !alert.closed) {
+      drawAlert(screen, draw, alert);
+      draw.flush();
+    }
   }
   // must be the LAST step of the render cycle: every preceding flush can move
   // the terminal cursor to the last written cell, which would hide the blink.
@@ -136,6 +145,7 @@ function update() {
   cm.ensureVisible(viewW, viewH);
   renderView();
   session.validator.schedule(editor.lines);
+  backup.schedule(editor);
 }
 
 function reloadPlugin() {
@@ -147,6 +157,49 @@ function reloadPlugin() {
     session.pluginVersion = undefined;
   }
   session.validator = createValidator(session.plugin, () => renderView());
+  refreshGitInfo();
+}
+
+function refreshGitInfo() {
+  void getGitInfo(editor.filePath).then((info) => {
+    gitInfo = info;
+    update();
+  });
+}
+
+// ----- Recovery -----
+
+function refreshRecoveryBanner() {
+  const count = listOrphanedBackups(getBackupsDir()).length;
+  if (count === 0) {
+    if (recoveryAlert) closeAlert(recoveryAlert);
+    return;
+  }
+  const files = count === 1 ? "1 unsaved file" : `${count} unsaved files`;
+  const message = `${files} from a crash. Ctrl+R or click to recover`;
+  if (recoveryAlert) {
+    recoveryAlert.opts.message = message;
+    return;
+  }
+  log.info({ action: "recovery_found", count });
+  recoveryAlert = createAlert(
+    {
+      type: "warn",
+      position: "bottom",
+      message,
+      onClick: () => void openRecovery(),
+    },
+    () => {
+      recoveryAlert = null;
+      update();
+    },
+  );
+}
+
+async function openRecovery() {
+  await showRecovery(session);
+  refreshRecoveryBanner();
+  update();
 }
 
 // ----- Completion -----
@@ -299,6 +352,7 @@ input.registerShortcut("ctrl+s", "save");
 input.registerShortcut("ctrl+q", "exit");
 input.registerShortcut("ctrl+f", "search");
 input.registerShortcut("ctrl+g", "goto");
+input.registerShortcut("ctrl+r", "recover");
 input.registerShortcut("f1", "help");
 input.registerShortcut("f2", "history");
 input.registerShortcut("f4", "diagnostics");
@@ -330,6 +384,9 @@ editorLayer.on("shortcut", (event) => {
     case "goto":
       void openGoto(session);
       break;
+    case "recover":
+      void openRecovery();
+      break;
     case "help":
       void showHelp(session);
       break;
@@ -353,6 +410,9 @@ editorLayer.on("key", (key) => {
   if (activeAlert && alertHandleKey(activeAlert, key.raw)) {
     return true;
   }
+  if (recoveryAlert && alertHandleKey(recoveryAlert, key.raw)) {
+    return true;
+  }
   dispatch(key);
   return true;
 });
@@ -371,6 +431,9 @@ editorLayer.on("paste", (event) => {
 editorLayer.on("mouse:click", (event: MouseEvent) => {
   // alert intercepts click on ✕; onClose callback clears activeAlert and re-renders
   if (activeAlert && alertHandleClick(activeAlert, event.x, event.y)) {
+    return true;
+  }
+  if (recoveryAlert && alertHandleClick(recoveryAlert, event.x, event.y)) {
     return true;
   }
   // clicking anywhere dismisses the completion popup — the user is navigating, not typing
@@ -570,15 +633,14 @@ async function start() {
   }
 
   screen.enter();
+  installCrashGuard(screen, () => backup.writeNow(editor));
   process.stdin.setRawMode(true);
   input.start();
+  refreshRecoveryBanner();
   update();
 
-  // async git info — non-blocking, renders when ready
-  void getGitInfo(editor.filePath).then((info) => {
-    gitInfo = info;
-    update();
-  });
+  // async git info, renders when ready (already triggered by reloadPlugin for files)
+  if (!filePath) refreshGitInfo();
 
   // async version check - shows a banner if a newer version is available
   void checkIfUpdateAvailable().then((latest) => {

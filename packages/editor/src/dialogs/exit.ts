@@ -2,11 +2,14 @@ import { showDialog } from "@jano-editor/ui";
 import type { Session } from "./session.ts";
 import { trySave, saveWithDialog } from "./save.ts";
 
+function quit(s: Session): never {
+  s.backup.discard();
+  s.screen.leave();
+  process.exit(0);
+}
+
 export async function confirmExit(s: Session): Promise<void> {
-  if (!s.editor.dirty) {
-    s.screen.leave();
-    process.exit(0);
-  }
+  if (!s.editor.dirty) quit(s);
 
   const result = await showDialog(
     s.input,
@@ -27,26 +30,16 @@ export async function confirmExit(s: Session): Promise<void> {
 
   if (result.type === "button") {
     if (result.value === "save") {
-      if (!s.editor.filePath) {
-        await saveWithDialog(s);
-        if (!s.editor.filePath) {
-          s.update();
-          return;
-        }
-      } else {
-        const ok = await trySave(s, s.editor.filePath);
-        if (!ok) {
-          s.update();
-          return;
-        }
+      const saved = s.editor.filePath
+        ? await trySave(s, s.editor.filePath)
+        : await saveWithDialog(s);
+      if (!saved) {
+        s.update();
+        return;
       }
-      s.screen.leave();
-      process.exit(0);
+      quit(s);
     }
-    if (result.value === "discard") {
-      s.screen.leave();
-      process.exit(0);
-    }
+    if (result.value === "discard") quit(s);
   }
 
   s.update();

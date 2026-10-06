@@ -47,6 +47,7 @@ npm install -g @jano-editor/editor
 - **Multi-cursor editing** - Ctrl+Shift+Up/Down to stack cursors, Ctrl+D for next occurrence
 - **Mouse support** - click, double/triple-click to select, drag, scroll, auto-scroll at edges
 - **Search & Replace** - Ctrl+F with live results
+- **Crash recovery** - unsaved changes are backed up in the background (`~/.local/state/jano/backups/`). After a crash or a killed terminal, a banner offers to restore them (Ctrl+R)
 - **Settings dialog** - F9 for tab size, line numbers, autocomplete toggle
 - **Structured debug logs** - `--debug` writes JSON events to `~/.cache/jano/logs/` for easy bug diagnosis
 - **Plugin system** - install plugins from the [Plugin Store](https://janoeditor.dev/plugins)
@@ -83,6 +84,7 @@ jano update
 | Ctrl+A                   | Select All               |
 | Ctrl+F                   | Search & Replace         |
 | Ctrl+G                   | Go to Line               |
+| Ctrl+R                   | Recover Unsaved Files    |
 | Ctrl+D                   | Select Next Occurrence   |
 | Ctrl+Shift+Up/Down       | Add Cursor Above / Below |
 | Ctrl+Space               | Trigger Autocomplete     |
