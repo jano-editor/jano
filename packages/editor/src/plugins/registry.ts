@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
-import { getPluginsDir } from "./config.ts";
+import { getPluginDir } from "./config.ts";
 
 const REGISTRY_URL = "https://janoeditor.dev/api";
 
@@ -67,6 +67,9 @@ export async function installPlugin(
   }
 
   try {
+    // the name ends up in the download url and the install path, reject anything path-like early
+    getPluginDir(name);
+
     // fetch plugin info
     console.log(`[jano] Fetching plugin info for '${name}'...`);
     const detail = await fetchPluginDetail(name);
@@ -88,8 +91,7 @@ export async function installPlugin(
     }
 
     // check if already installed
-    const pluginsDir = getPluginsDir();
-    const pluginDir = join(pluginsDir, name);
+    const pluginDir = getPluginDir(name);
     const manifestPath = join(pluginDir, "plugin.json");
 
     let installedVersion: string | null = null;

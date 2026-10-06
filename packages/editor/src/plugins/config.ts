@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { homedir, platform } from "node:os";
 
 export interface EditorSettings {
@@ -107,6 +107,24 @@ export function getConfigDir(): string {
 }
 export function getPluginsDir(): string {
   return paths.plugins;
+}
+
+// letters, digits, ".", "_" and "-", not starting with a dot, so no "..", "/" or hidden dirs
+const PLUGIN_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+
+export function isValidPluginName(name: string): boolean {
+  return PLUGIN_NAME.test(name);
+}
+
+/** Directory of a plugin. Throws for names that could escape the plugins dir (e.g. "../.."). */
+export function getPluginDir(name: string): string {
+  if (!isValidPluginName(name)) throw new Error(`Invalid plugin name '${name}'.`);
+  const dir = resolve(paths.plugins, name);
+  // defense in depth, the name check above should already make this impossible
+  if (!dir.startsWith(resolve(paths.plugins) + sep)) {
+    throw new Error(`Invalid plugin name '${name}'.`);
+  }
+  return dir;
 }
 export function getCacheDir(): string {
   return paths.cache;
