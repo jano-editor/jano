@@ -9,9 +9,11 @@ import {
   renameSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { platform, arch } from "node:os";
 import { getPluginsDir } from "./plugins/config.ts";
 import {
+  checksumFor,
   compareVersions,
   editorVersion,
   pickLatestEditorRelease,
@@ -211,9 +213,33 @@ function getBinaryAssetName(): string | null {
   const os = platform();
   const cpu = arch();
   if (os === "linux" && cpu === "x64") return "jano-linux-x64";
+  if (os === "linux" && cpu === "arm64") return "jano-linux-arm64";
   if (os === "darwin" && cpu === "arm64") return "jano-darwin-arm64";
+  if (os === "darwin" && cpu === "x64") return "jano-darwin-x64";
   if (os === "win32" && cpu === "x64") return "jano-windows-x64.exe";
   return null;
+}
+
+/** Refuses to install a download that doesn't match the release's SHA256SUMS. */
+async function verifyChecksum(release: GithubRelease, assetName: string, buf: Buffer) {
+  const base = `https://github.com/jano-editor/jano/releases/download/${release.tag_name}`;
+  if (!release.assets.some((a) => a.name === "SHA256SUMS")) {
+    // releases before checksums were published
+    console.log("[jano] No checksums published for this release, skipping verification.");
+    return;
+  }
+  const res = await fetch(`${base}/SHA256SUMS`, {
+    headers: { "User-Agent": "jano-update" },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Could not download checksums: HTTP ${res.status}`);
+  const expected = checksumFor(await res.text(), assetName);
+  if (!expected) throw new Error(`No checksum for ${assetName} in SHA256SUMS`);
+  const actual = createHash("sha256").update(buf).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`Checksum mismatch for ${assetName}, the download may be corrupted`);
+  }
+  console.log("[jano] ✓ Checksum verified.");
 }
 
 async function selfUpdateBinary(release: GithubRelease): Promise<void> {
@@ -241,6 +267,7 @@ async function selfUpdateBinary(release: GithubRelease): Promise<void> {
   });
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
+  await verifyChecksum(release, assetName, buf);
 
   const tmpFile = `${process.execPath}.new`;
   writeFileSync(tmpFile, buf);

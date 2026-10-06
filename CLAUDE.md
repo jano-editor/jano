@@ -135,7 +135,15 @@ Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugi
 
 ### Standalone Binary Distribution
 
-`bun build --compile` is in use. Final binary is ~95 MB (includes the Bun runtime) and has zero external requirements — no Node, no npm. Cross-compile flags: `--target=bun-linux-x64`, `--target=bun-darwin-arm64`, `--target=bun-windows-x64`.
+`bun build --compile` is in use. Final binary is ~95 MB (includes the Bun runtime) and has zero external requirements, no Node, no npm.
+
+Release pipeline (`.github/workflows/release.yml`):
+
+- Targets: `linux-x64`, `linux-arm64`, `windows-x64` (built on Linux), `darwin-arm64`, `darwin-x64` (built and ad-hoc signed on a `macos-15` runner, unsigned binaries get killed on Apple Silicon).
+- Every editor release ships `SHA256SUMS`. `install.sh` and `jano update` verify it.
+- Only editor releases are marked "latest". ui/plugin-types releases use `--latest=false`, and install/update look up the newest `editor-v*` tag anyway.
+- Distribution is Homebrew + `install.sh` only, no notarization (direct browser downloads are not a supported install path).
+- Dry run: PRs touching the workflow, lockfile or package.json files (and manual "Run workflow") run the full pipeline without publishing.
 
 Dynamic plugin loading via `await import(pathToFileURL(...).href)` works from the compiled binary. `jano update` detects the install method (`npm` / `brew` / `standalone` / `dev`) and upgrades accordingly — npm via `npm install -g`, standalone via download + atomic rename of `process.execPath`.
 

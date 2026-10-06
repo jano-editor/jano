@@ -6,6 +6,16 @@ on:
       - "plugin-types-v*"
       - "ui-v*"
       - "editor-v*"
+  # dry run: everything an editor release does, without publishing anything
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "pnpm-lock.yaml"
+      - "packages/*/package.json"
+  workflow_dispatch:
+
+env:
+  DRY_RUN: ${{ github.event_name != 'push' }}
 
 jobs:
   release:
@@ -15,6 +25,12 @@ jobs:
     permissions:
       contents: write
       id-token: write
+
+    outputs:
+      tag: ${{ steps.pkg.outputs.tag }}
+      is_editor: ${{ steps.pkg.outputs.is_editor }}
+      name: ${{ steps.pkg.outputs.name }}
+      version: ${{ steps.pkg.outputs.version }}
 
     steps:
       - name: Checkout
@@ -40,6 +56,12 @@ jobs:
         id: pkg
         run: |
           TAG="${{ github.ref_name }}"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            # pretend to release the current editor version
+            TAG="editor-v$(node -p "require('./packages/editor/package.json').version")"
+            echo "Dry run as $TAG"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [[ "$TAG" =~ ^plugin-types-v(.+)$ ]]; then
             echo "dir=packages/plugin-types" >> $GITHUB_OUTPUT
             echo "name=@jano-editor/plugin-types" >> $GITHUB_OUTPUT
@@ -73,47 +95,133 @@ jobs:
 
       - name: Publish to npm
         working-directory: ${{ steps.pkg.outputs.dir }}
-        run: pnpm publish --access public --no-git-checks
+        run: pnpm publish --access public --no-git-checks $([[ "$DRY_RUN" == "true" ]] && echo --dry-run)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Compile binaries
+      - name: Compile linux and windows binaries
         if: steps.pkg.outputs.is_editor == 'true'
         run: |
-          bun build ./packages/editor/dist/cli.js --compile --target=bun-linux-x64 --outfile jano-linux-x64
-          bun build ./packages/editor/dist/cli.js --compile --target=bun-darwin-arm64 --outfile jano-darwin-arm64
-          bun build ./packages/editor/dist/cli.js --compile --target=bun-windows-x64 --outfile jano-windows-x64.exe
+          mkdir -p bin
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-linux-x64 --outfile bin/jano-linux-x64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-linux-arm64 --outfile bin/jano-linux-arm64
+          bun build ./packages/editor/dist/cli.js --compile --target=bun-windows-x64 --outfile bin/jano-windows-x64.exe
+          # the runner is arm64, so this one can be smoke tested
+          ./bin/jano-linux-arm64 --version
 
-      - name: Create GitHub Release
+      - name: Upload binaries
+        if: steps.pkg.outputs.is_editor == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-linux-windows
+          path: bin/
+
+      - name: Create GitHub release
+        if: steps.pkg.outputs.is_editor != 'true'
+        # only editor releases carry binaries, so only they may become "latest"
         run: |
-          if [[ "${{ steps.pkg.outputs.is_editor }}" == "true" ]]; then
-            gh release create "${{ github.ref_name }}" \
-              jano-linux-x64 \
-              jano-darwin-arm64 \
-              jano-windows-x64.exe \
-              --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
-              --generate-notes \
-              --latest
-          else
-            # only editor releases carry binaries, so only they may become "latest"
-            gh release create "${{ github.ref_name }}" \
-              --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
-              --generate-notes \
-              --latest=false
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
+            --generate-notes \
+            --latest=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos:
+    name: macOS binaries
+    needs: release
+    if: needs.release.outputs.is_editor == 'true'
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # bun --compile bundles runtime deps from node_modules, so a full install is needed here
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @jano-editor/editor build
+
+      - name: Compile and sign
+        run: |
+          mkdir -p bin
+          for target in darwin-arm64 darwin-x64; do
+            bun build ./packages/editor/dist/cli.js --compile --target=bun-$target --outfile bin/jano-$target
+            # macOS kills binaries without a valid signature. an ad-hoc signature is enough
+            # for brew and install.sh, since neither sets the quarantine flag.
+            codesign --force --sign - bin/jano-$target
+            codesign --verify --strict --verbose=2 bin/jano-$target
+          done
+          ./bin/jano-darwin-arm64 --version
+          # intel build via rosetta, if the runner has it
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 ./bin/jano-darwin-x64 --version
           fi
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-macos
+          path: bin/
+
+  publish:
+    name: GitHub release + Homebrew
+    needs: [release, macos]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: bin
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: bin
+        run: |
+          sha256sum jano-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub release
+        if: env.DRY_RUN != 'true'
+        run: |
+          gh release create "${{ needs.release.outputs.tag }}" bin/* \
+            --repo "${{ github.repository }}" \
+            --title "${{ needs.release.outputs.name }} ${{ needs.release.outputs.version }}" \
+            --generate-notes \
+            --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Homebrew tap
-        if: steps.pkg.outputs.is_editor == 'true'
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
-          VERSION="${{ steps.pkg.outputs.version }}"
-          SHA_DARWIN=$(sha256sum jano-darwin-arm64 | cut -d' ' -f1)
-          SHA_LINUX=$(sha256sum jano-linux-x64 | cut -d' ' -f1)
+          VERSION="${{ needs.release.outputs.version }}"
+          sha() { grep " $1\$" bin/SHA256SUMS | cut -d' ' -f1; }
 
-          git clone https://x-access-token:${TAP_TOKEN}@github.com/jano-editor/homebrew-jano.git /tmp/homebrew-jano
+          if [[ "$DRY_RUN" == "true" ]]; then
+            mkdir -p /tmp/homebrew-jano/Formula
+          else
+            git clone https://x-access-token:${TAP_TOKEN}@github.com/jano-editor/homebrew-jano.git /tmp/homebrew-jano
+          fi
 
           cat > /tmp/homebrew-jano/Formula/jano.rb << FORMULA
           class Jano < Formula
@@ -125,14 +233,22 @@ jobs:
             on_macos do
               on_arm do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-darwin-arm64"
-                sha256 "${SHA_DARWIN}"
+                sha256 "$(sha jano-darwin-arm64)"
+              end
+              on_intel do
+                url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-darwin-x64"
+                sha256 "$(sha jano-darwin-x64)"
               end
             end
 
             on_linux do
               on_intel do
                 url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-linux-x64"
-                sha256 "${SHA_LINUX}"
+                sha256 "$(sha jano-linux-x64)"
+              end
+              on_arm do
+                url "https://github.com/jano-editor/jano/releases/download/editor-v#{version}/jano-linux-arm64"
+                sha256 "$(sha jano-linux-arm64)"
               end
             end
 
@@ -146,6 +262,12 @@ jobs:
             end
           end
           FORMULA
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            cat /tmp/homebrew-jano/Formula/jano.rb
+            ruby -c /tmp/homebrew-jano/Formula/jano.rb
+            exit 0
+          fi
 
           cd /tmp/homebrew-jano
           git config user.name "github-actions[bot]"

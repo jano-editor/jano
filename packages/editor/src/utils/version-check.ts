@@ -58,6 +58,15 @@ export function pickLatestEditorRelease(releases: GithubRelease[]): GithubReleas
   );
 }
 
+/** Hash for `file` from a `sha256sum` style SHA256SUMS file, or null if it isn't listed. */
+export function checksumFor(sums: string, file: string): string | null {
+  for (const line of sums.split("\n")) {
+    const [hash, name] = line.trim().split(/\s+\*?/);
+    if (name === file && /^[0-9a-f]{64}$/i.test(hash)) return hash.toLowerCase();
+  }
+  return null;
+}
+
 export function editorVersion(release: GithubRelease): string {
   return release.tag_name.slice(EDITOR_TAG.length);
 }

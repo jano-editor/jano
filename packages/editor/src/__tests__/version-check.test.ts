@@ -6,7 +6,7 @@ import { join } from "node:path";
 // isolate cache dir before importing version-check (which transitively imports config)
 process.env.JANO_HOME = mkdtempSync(join(tmpdir(), "jano-vc-test-"));
 
-const { compareVersions, pickLatestEditorRelease, editorVersion } =
+const { compareVersions, pickLatestEditorRelease, editorVersion, checksumFor } =
   await import("../utils/version-check.ts");
 
 describe("compareVersions", () => {
@@ -65,5 +65,24 @@ describe("pickLatestEditorRelease", () => {
 
   it("returns null without editor releases", () => {
     expect(pickLatestEditorRelease([rel("ui-v1.0.0")])).toBeNull();
+  });
+});
+
+describe("checksumFor", () => {
+  const a = "a".repeat(64);
+  const b = "B".repeat(64);
+  const sums = `${a}  jano-linux-x64\n${b} *jano-darwin-arm64\n`;
+
+  it("finds the hash for a file", () => {
+    expect(checksumFor(sums, "jano-linux-x64")).toBe(a);
+  });
+
+  it("supports binary mode markers and normalizes case", () => {
+    expect(checksumFor(sums, "jano-darwin-arm64")).toBe("b".repeat(64));
+  });
+
+  it("returns null for unknown files or broken hashes", () => {
+    expect(checksumFor(sums, "jano-linux-arm64")).toBeNull();
+    expect(checksumFor("xyz  jano-linux-x64", "jano-linux-x64")).toBeNull();
   });
 });
