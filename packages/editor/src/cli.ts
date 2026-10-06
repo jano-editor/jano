@@ -9,8 +9,16 @@ import {
   renameSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { platform, arch } from "node:os";
 import { getPluginsDir } from "./plugins/config.ts";
+import {
+  checksumFor,
+  compareVersions,
+  editorVersion,
+  pickLatestEditorRelease,
+  type GithubRelease,
+} from "./utils/version-check.ts";
 import { installPlugin, searchPlugins, fetchPluginList } from "./plugins/registry.ts";
 
 const args = process.argv.slice(2);
@@ -181,30 +189,72 @@ function detectInstallMethod(): InstallMethod {
   return "standalone";
 }
 
-async function fetchLatestEditorVersion(): Promise<string> {
-  const res = await fetch("https://api.github.com/repos/jano-editor/jano/releases?per_page=20", {
-    headers: { "User-Agent": "jano-update-check" },
-  });
-  if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
-  const releases = (await res.json()) as { tag_name: string }[];
-  const editor = releases.find((r) => r.tag_name.startsWith("editor-v"));
-  if (!editor) throw new Error("No editor release found on GitHub");
-  return editor.tag_name.replace(/^editor-v/, "");
+const RELEASES_API = "https://api.github.com/repos/jano-editor/jano/releases";
+const API_TIMEOUT_MS = 15_000;
+const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+// the last release published without SHA256SUMS, every later one must have them
+const LAST_RELEASE_WITHOUT_CHECKSUMS = "1.0.0-alpha.18";
+
+/** Pages through releases until editor releases show up, ui/plugin-types releases share the repo. */
+async function fetchLatestEditorRelease(): Promise<GithubRelease> {
+  for (let page = 1; page <= 5; page++) {
+    const res = await fetch(`${RELEASES_API}?per_page=100&page=${page}`, {
+      headers: { "User-Agent": "jano-update-check" },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    const releases = (await res.json()) as GithubRelease[];
+    const editor = pickLatestEditorRelease(releases);
+    if (editor) return editor;
+    if (releases.length < 100) break;
+  }
+  throw new Error("No editor release found on GitHub");
 }
 
 function getBinaryAssetName(): string | null {
   const os = platform();
   const cpu = arch();
   if (os === "linux" && cpu === "x64") return "jano-linux-x64";
+  if (os === "linux" && cpu === "arm64") return "jano-linux-arm64";
   if (os === "darwin" && cpu === "arm64") return "jano-darwin-arm64";
+  if (os === "darwin" && cpu === "x64") return "jano-darwin-x64";
   if (os === "win32" && cpu === "x64") return "jano-windows-x64.exe";
   return null;
 }
 
-async function selfUpdateBinary(latestVersion: string): Promise<void> {
+/** Refuses to install a download that doesn't match the release's SHA256SUMS. */
+async function verifyChecksum(release: GithubRelease, assetName: string, buf: Buffer) {
+  const base = `https://github.com/jano-editor/jano/releases/download/${release.tag_name}`;
+  if (!release.assets.some((a) => a.name === "SHA256SUMS")) {
+    // a newer release without checksums means a broken or tampered release, not an old one
+    if (compareVersions(editorVersion(release), LAST_RELEASE_WITHOUT_CHECKSUMS) > 0) {
+      throw new Error(`${release.tag_name} has no SHA256SUMS, refusing to install it`);
+    }
+    console.log("[jano] No checksums published for this release, skipping verification.");
+    return;
+  }
+  const res = await fetch(`${base}/SHA256SUMS`, {
+    headers: { "User-Agent": "jano-update" },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Could not download checksums: HTTP ${res.status}`);
+  const expected = checksumFor(await res.text(), assetName);
+  if (!expected) throw new Error(`No checksum for ${assetName} in SHA256SUMS`);
+  const actual = createHash("sha256").update(buf).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`Checksum mismatch for ${assetName}, the download may be corrupted`);
+  }
+  console.log("[jano] ✓ Checksum verified.");
+}
+
+async function selfUpdateBinary(release: GithubRelease): Promise<void> {
+  const latestVersion = editorVersion(release);
   const assetName = getBinaryAssetName();
   if (!assetName) {
     throw new Error(`Unsupported platform: ${platform()}/${arch()}`);
+  }
+  if (!release.assets.some((a) => a.name === assetName)) {
+    throw new Error(`v${latestVersion} has no ${assetName} binary (yet). Try again later.`);
   }
   if (platform() === "win32") {
     throw new Error(
@@ -216,9 +266,13 @@ async function selfUpdateBinary(latestVersion: string): Promise<void> {
   const url = `https://github.com/jano-editor/jano/releases/download/editor-v${latestVersion}/${assetName}`;
   console.log(`[jano] Downloading ${assetName}...`);
 
-  const res = await fetch(url, { headers: { "User-Agent": "jano-update" } });
+  const res = await fetch(url, {
+    headers: { "User-Agent": "jano-update" },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
+  await verifyChecksum(release, assetName, buf);
 
   const tmpFile = `${process.execPath}.new`;
   writeFileSync(tmpFile, buf);
@@ -241,9 +295,9 @@ async function handleUpdate() {
   }
 
   console.log("[jano] Checking for updates...");
-  let latest: string;
+  let release: GithubRelease;
   try {
-    latest = await fetchLatestEditorVersion();
+    release = await fetchLatestEditorRelease();
   } catch (err) {
     console.error(
       `[jano] Could not check for updates: ${err instanceof Error ? err.message : String(err)}`,
@@ -251,7 +305,9 @@ async function handleUpdate() {
     process.exit(1);
   }
 
-  if (latest === VERSION) {
+  const latest = editorVersion(release);
+  // compare instead of ===, so a newer local build is never "updated" to an older release
+  if (compareVersions(VERSION, latest) >= 0) {
     console.log(`[jano] Already up to date (v${VERSION}).`);
     return;
   }
@@ -270,7 +326,7 @@ async function handleUpdate() {
       execSync("brew upgrade jano-editor/jano/jano", { stdio: "inherit" });
       console.log(`[jano] ✓ Updated to v${latest}`);
     } else {
-      await selfUpdateBinary(latest);
+      await selfUpdateBinary(release);
     }
   } catch (err) {
     console.error(`[jano] Update failed: ${err instanceof Error ? err.message : String(err)}`);
