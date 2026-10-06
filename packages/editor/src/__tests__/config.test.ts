@@ -11,7 +11,8 @@ const originalHome = process.env.JANO_HOME;
 process.env.JANO_HOME = tmp;
 
 // Now import after env is set
-const { loadConfig, saveConfig, getPaths } = await import("../plugins/config.ts");
+const { loadConfig, saveConfig, getPaths, getPluginDir, isValidPluginName } =
+  await import("../plugins/config.ts");
 
 const configPath = join(getPaths().config, "config.json");
 
@@ -103,5 +104,35 @@ describe("config: editor settings", () => {
     const loaded = loadConfig();
     expect(loaded.plugins.yaml?.enabled).toBe(false);
     expect(loaded.editor.tabSize).toBe(4);
+  });
+});
+
+describe("plugin names", () => {
+  it("accepts registry style names", () => {
+    for (const name of ["json", "yaml", "plugin-markdown", "my_plugin", "v2.0", "Docker"]) {
+      expect(isValidPluginName(name)).toBe(true);
+    }
+  });
+
+  it("rejects anything that could leave the plugins dir", () => {
+    for (const name of [
+      "..",
+      ".",
+      "../x",
+      "../../..",
+      "a/b",
+      "a\\b",
+      "/etc",
+      ".hidden",
+      "",
+      "a\0b",
+    ]) {
+      expect(isValidPluginName(name)).toBe(false);
+      expect(() => getPluginDir(name)).toThrow("Invalid plugin name");
+    }
+  });
+
+  it("resolves valid names inside the plugins dir", () => {
+    expect(getPluginDir("json")).toBe(join(getPaths().plugins, "json"));
   });
 });

@@ -11,7 +11,7 @@ import {
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { platform, arch } from "node:os";
-import { getPluginsDir } from "./plugins/config.ts";
+import { getPluginsDir, getPluginDir, isValidPluginName } from "./plugins/config.ts";
 import {
   checksumFor,
   compareVersions,
@@ -121,7 +121,11 @@ async function handlePluginCommand() {
         console.error("Usage: jano plugin remove <name>");
         process.exit(1);
       }
-      const pluginDir = join(getPluginsDir(), name);
+      if (!isValidPluginName(name)) {
+        console.error(`[jano] Invalid plugin name '${name}'.`);
+        process.exit(1);
+      }
+      const pluginDir = getPluginDir(name);
       if (!existsSync(pluginDir)) {
         console.error(`[jano] Plugin '${name}' is not installed.`);
         process.exit(1);
