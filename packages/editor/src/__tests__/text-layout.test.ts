@@ -88,3 +88,37 @@ describe("grapheme boundaries", () => {
     expect(prevBoundary("ab", 0)).toBe(0);
   });
 });
+
+describe("long lines (cached index)", () => {
+  // longer than the cache threshold, with a tab and an emoji far to the right
+  const long = "ä".repeat(300) + "\t" + EMOJI + "x";
+
+  it("follows a tab size change", () => {
+    expect(colAt(long, 301, 4)).toBe(304);
+    expect(colAt(long, 301, 8)).toBe(304);
+    expect(colAt(long, 303, 4)).toBe(306);
+    expect(colAt(long, 303, 8)).toBe(306);
+    expect(colAt(long, 301, 3)).toBe(303);
+  });
+
+  it("boundary lookups don't disturb the column cache", () => {
+    expect(nextBoundary(long, 301)).toBe(303);
+    expect(lineWidth(long, 4)).toBe(307);
+    expect(prevBoundary(long, 303)).toBe(301);
+    expect(lineWidth(long, 8)).toBe(307);
+  });
+
+  it("lays out only the requested column range", () => {
+    const glyphs = layoutLine(long, 4, 300, 306);
+    expect(glyphs.map((g) => g.idx)).toEqual([300, 301]);
+    expect(layoutLine("x".repeat(1000), 4, 990, 995).map((g) => g.idx)).toEqual([
+      990, 991, 992, 993, 994,
+    ]);
+  });
+
+  it("maps columns back to indices", () => {
+    expect(idxAtCol(long, 302, 4)).toBe(300);
+    expect(idxAtCol(long, 305, 4)).toBe(301);
+    expect(idxAtCol(long, 999, 4)).toBe(long.length);
+  });
+});

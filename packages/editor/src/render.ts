@@ -166,13 +166,16 @@ export function render(
     const line = editor.lines[lineIdx];
     const tokens = tokenizeLine(line, plugin, lineIdx, editor.lines);
 
-    // build color map for this line
-    const colorMap: (RGB | null)[] = Array.from<RGB | null>({ length: line.length }).fill(null);
+    // only the visible part is laid out and colored, so huge lines stay cheap
+    const glyphs = layoutLine(line, tabSize, cm.scrollX, cm.scrollX + viewW);
+    const lo = glyphs.length > 0 ? glyphs[0].idx : 0;
+    const hi = glyphs.length > 0 ? glyphs[glyphs.length - 1].idx + 1 : 0;
+    const colorMap: (RGB | null)[] = Array.from<RGB | null>({ length: hi - lo }).fill(null);
     for (const token of tokens) {
       const color = tokenColors[token.type];
       if (color) {
-        for (let i = token.start; i < token.end && i < line.length; i++) {
-          colorMap[i] = color;
+        for (let i = Math.max(token.start, lo); i < token.end && i < hi; i++) {
+          colorMap[i - lo] = color;
         }
       }
     }
@@ -192,12 +195,12 @@ export function render(
     };
 
     // draw glyphs (tabs expanded, wide chars take two cells)
-    for (const g of layoutLine(line, tabSize)) {
+    for (const g of glyphs) {
       const start = g.col - cm.scrollX;
       if (g.width === 0 || start + g.width <= 0) continue;
       if (start >= viewW) break;
 
-      const style = styleAt(g.idx, g.control ? CONTROL_FG : (colorMap[g.idx] ?? DEFAULT_FG));
+      const style = styleAt(g.idx, g.control ? CONTROL_FG : (colorMap[g.idx - lo] ?? DEFAULT_FG));
       if (g.width === 2 && start >= 0 && start + 1 < viewW) {
         draw.text(1 + gw + start, screenY, g.text, style);
         continue;
