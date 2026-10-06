@@ -18,6 +18,7 @@ export interface AlertOptions {
   width?: number;
   autoClose?: number; // ms, 0 / undefined = no auto-close
   colors?: AlertColors;
+  onClick?: () => void; // called when the message (not ✕) is clicked
 }
 
 export interface AlertState {
@@ -25,6 +26,7 @@ export interface AlertState {
   createdAt: number;
   closed: boolean;
   closeHitArea: { x: number; y: number; w: number } | null;
+  bodyHitArea: { x: number; y: number; w: number } | null;
   timer: ReturnType<typeof setTimeout> | null;
   onClose: (() => void) | undefined;
 }
@@ -71,6 +73,7 @@ export function createAlert(opts: AlertOptions, onClose?: () => void): AlertStat
     createdAt: Date.now(),
     closed: false,
     closeHitArea: null,
+    bodyHitArea: null,
     timer: null,
     onClose,
   };
@@ -109,6 +112,7 @@ export function drawAlert(screen: Screen, draw: Draw, state: AlertState): void {
 
   let col = x;
 
+  state.bodyHitArea = { x, y, w: width - closeStr.length };
   draw.text(col, y, iconStr, { fg, bg: border });
   col += iconStr.length;
 
@@ -133,16 +137,24 @@ export function alertHandleKey(state: AlertState, keyRaw: Buffer): boolean {
 }
 
 /**
- * Returns true if a click at (mouseX, mouseY) is on the close button.
+ * Handles a click at (mouseX, mouseY). ✕ closes the alert, the message calls opts.onClick.
+ * Returns true if the click was consumed.
  */
 export function alertHandleClick(state: AlertState, mouseX: number, mouseY: number): boolean {
-  if (state.closed || !state.closeHitArea) return false;
-  const hit = state.closeHitArea;
-  if (mouseY === hit.y && mouseX >= hit.x && mouseX < hit.x + hit.w) {
+  if (state.closed) return false;
+  if (isHit(state.closeHitArea, mouseX, mouseY)) {
     closeAlert(state);
     return true;
   }
+  if (state.opts.onClick && isHit(state.bodyHitArea, mouseX, mouseY)) {
+    state.opts.onClick();
+    return true;
+  }
   return false;
+}
+
+function isHit(area: AlertState["closeHitArea"], x: number, y: number): boolean {
+  return !!area && y === area.y && x >= area.x && x < area.x + area.w;
 }
 
 export function closeAlert(state: AlertState): void {

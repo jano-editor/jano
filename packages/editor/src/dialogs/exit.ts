@@ -2,11 +2,14 @@ import { showDialog } from "@jano-editor/ui";
 import type { Session } from "./session.ts";
 import { trySave, saveWithDialog } from "./save.ts";
 
+function quit(s: Session): never {
+  s.backup.discard();
+  s.screen.leave();
+  process.exit(0);
+}
+
 export async function confirmExit(s: Session): Promise<void> {
-  if (!s.editor.dirty) {
-    s.screen.leave();
-    process.exit(0);
-  }
+  if (!s.editor.dirty) quit(s);
 
   const result = await showDialog(
     s.input,
@@ -34,13 +37,9 @@ export async function confirmExit(s: Session): Promise<void> {
         s.update();
         return;
       }
-      s.screen.leave();
-      process.exit(0);
+      quit(s);
     }
-    if (result.value === "discard") {
-      s.screen.leave();
-      process.exit(0);
-    }
+    if (result.value === "discard") quit(s);
   }
 
   s.update();

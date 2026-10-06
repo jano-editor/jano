@@ -7,3 +7,4 @@ export { openGoto } from "./goto.ts";
 export { showHelp } from "./help.ts";
 export { showSettings } from "./settings.ts";
 export { showDiagnostics } from "./diagnostics.ts";
+export { showRecovery } from "./recover.ts";

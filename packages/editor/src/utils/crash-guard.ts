@@ -7,13 +7,19 @@ const SIGNALS = { SIGTERM: 15, SIGHUP: 1 } as const;
 /**
  * Restores the terminal when jano dies unexpectedly. Without this, a crash or
  * kill leaves the shell in the alternate screen with mouse tracking and raw mode on.
+ * onDeath runs first, e.g. to back up unsaved changes.
  */
-export function installCrashGuard(screen: Screen): void {
+export function installCrashGuard(screen: Screen, onDeath?: () => void): void {
   let restored = false;
 
   const restore = () => {
     if (restored) return;
     restored = true;
+    try {
+      onDeath?.();
+    } catch {
+      // never let the hook block the terminal restore
+    }
     try {
       screen.leave();
       if (process.stdin.isTTY) process.stdin.setRawMode(false);

@@ -13,6 +13,7 @@ Website: [janoeditor.dev](https://janoeditor.dev) · Repo: [jano-editor/jano](ht
 - **Full mouse support** — click, double/triple-click, drag-select, scroll, auto-scroll at edges.
 - **Autocomplete with popup** — plugin-driven completions + buffer words.
 - **Inline validation** — errors and warnings from plugins appear right next to the line, F4 for details.
+- **Never lose work** - unsaved changes are backed up in the background. After a crash, jano offers to restore them.
 - **Auto-formatting** — F3 runs the active plugin's formatter on the whole document.
 - **Plugin store** — `jano plugin install yaml`, browse at [janoeditor.dev/plugins](https://janoeditor.dev/plugins).
 - **Zero bloat** — ~59KB JS bundle, starts instantly, smooth scrolling at 60,000+ lines.
@@ -60,6 +61,7 @@ jano update               # check for updates
 | Ctrl+X / Ctrl+C / Ctrl+V | Cut / Copy / Paste       |
 | Ctrl+F                   | Search & Replace         |
 | Ctrl+G                   | Go to Line               |
+| Ctrl+R                   | Recover Unsaved Files    |
 | Ctrl+D                   | Select Next Occurrence   |
 | Ctrl+Shift+Up/Down       | Add Cursor Above / Below |
 | Ctrl+Space               | Trigger Autocomplete     |

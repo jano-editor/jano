@@ -79,6 +79,7 @@ Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugi
 - [x] Debug logger (evlog + file drain, red DEBUG badge)
 - [x] Update banner on startup (npm registry check, 6h cache)
 - [x] Standalone Bun-compiled binary (~95 MB, `jano update` detects install method)
+- [x] Crash recovery (background backups, banner + Ctrl+R restore dialog)
 
 ## Architecture Details
 
@@ -147,6 +148,12 @@ The render cycle has three steps that MUST happen in order:
 3. `positionCursor()` — exported from `render.ts`, called as the LAST step of `renderView()` in `index.ts`. Re-positions the terminal cursor on the primary editor cursor so preceding flushes don't leave the blink at the end of the last written cell.
 
 Never call `screen.moveTo` / `screen.showCursor` from inside `render()` or an overlay — the subsequent overlay flush will overwrite it.
+
+### Crash Safety
+
+- `utils/crash-guard.ts` restores the terminal on uncaught errors, SIGTERM and SIGHUP, and writes a final backup first.
+- `backup.ts` keeps one backup per jano process in the `backups` path (`~/.local/state/jano/backups/` on Linux), named `<pid>-<startTime>.json`. Written async and debounced while the buffer is dirty, deleted when it is clean again or on a clean exit.
+- A backup whose pid is no longer alive is an orphan from a crashed session. On startup a banner offers the restore dialog (`dialogs/recover.ts`, Ctrl+R). Backups are never deleted on load, only after save, discard or an explicit restore/delete.
 
 ### Debug Logging
 
