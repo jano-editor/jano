@@ -42,17 +42,10 @@ export function createEditor(filePath?: string): EditorState {
   };
 }
 
-export function save(state: EditorState): boolean {
-  if (!state.filePath) return false;
-  writeFileSync(state.filePath, state.lines.join("\n"), "utf8");
-  state.dirty = false;
-  state.isNewFile = false;
-  return true;
-}
-
 export function saveAs(state: EditorState, filePath: string) {
-  state.filePath = filePath;
+  // write first, so a failed save doesn't leave filePath pointing at the bad target
   writeFileSync(filePath, state.lines.join("\n"), "utf8");
+  state.filePath = filePath;
   state.dirty = false;
   state.isNewFile = false;
 }

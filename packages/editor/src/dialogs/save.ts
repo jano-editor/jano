@@ -65,7 +65,7 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
   }
 }
 
-export async function saveWithDialog(s: Session): Promise<void> {
+export async function saveWithDialog(s: Session): Promise<boolean> {
   const result = await showDialog(
     s.input,
     s.screen,
@@ -92,9 +92,7 @@ export async function saveWithDialog(s: Session): Promise<void> {
     targetPath = result.value;
   }
 
-  if (targetPath) {
-    await trySave(s, targetPath);
-  }
-
+  const saved = targetPath ? await trySave(s, targetPath) : false;
   s.update();
+  return saved;
 }

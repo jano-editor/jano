@@ -10,17 +10,19 @@
 
 ## Packages
 
-- `packages/ui` - Terminal drawing lib (screen, draw, color, dialog)
+- `packages/ui` - Terminal drawing lib (screen, draw, color, dialog, alert, popup, list, toggle, search)
 - `packages/editor` - The editor itself
 - `packages/plugin-types` - Shared plugin interface (@jano-editor/plugin-types)
-- `packages/plugin-yaml` - YAML plugin (highlight + format)
+
+Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugin-json, plugin-markdown, plugin-shell, plugin-dockerfile.
 
 ## Commands
 
-- `pnpm tsx packages/editor/src/index.ts <file>` - Run in dev
-- `vp build && node dist/index.js <file>` - Run production build
+- `pnpm dev <file>` - Run in dev via cli.ts (adds `-- --debug` to enable debug logs)
+- `JANO_DEBUG=1 pnpm dev <file>` - Run with debug logs (alternative to `-- --debug`)
+- `vp build` - Production build (~59KB ESM output)
 - `vp check` - Lint + format + typecheck
-- `pnpm --filter @jano-editor/plugin-yaml install-plugin` - Build + install YAML plugin
+- `bun test` - Run unit tests (uses `bun:test`)
 
 ## TODO v0.1
 
@@ -45,8 +47,8 @@
 - [ ] Regex search
 - [ ] Macros
 - [ ] Plugin manager dialog (enable/disable with checkboxes)
-- [ ] `jano plugin install <name>` (needs registry server)
-- [ ] Plugin update check (needs endpoint)
+- [x] `jano plugin install <name>` (via janoeditor.dev registry)
+- [x] Plugin update check (startup banner via npm registry)
 
 ### Done
 
@@ -58,18 +60,25 @@
 - [x] Selection (Shift+Arrow, Shift+Ctrl+Arrow for words)
 - [x] Cut/Copy/Paste (Ctrl+X/C/V)
 - [x] Multi-cursor (Ctrl+Shift+Up/Down)
-- [x] Multi-cursor aware cut/copy/paste
+- [x] Multi-cursor next occurrence (Ctrl+D)
+- [x] Multi-cursor aware cut/copy/paste + autocomplete
 - [x] Undo/Redo with cursor state restore (Ctrl+Z/Y)
 - [x] History browser (F2)
 - [x] Word navigation (Ctrl+Left/Right)
 - [x] Word delete (Ctrl+Backspace/Delete)
 - [x] Move lines (Alt+Up/Down)
 - [x] Exit dialog with unsaved changes
-- [x] Plugin system (external, XDG paths, API versioning)
+- [x] Plugin system (external, XDG paths, API versioning, runs under sudo)
 - [x] Scrollbar (vertical + horizontal)
 - [x] Terminal resize handling
 - [x] 60k+ lines performance
-- [x] Vite+ build (21ms, 59KB)
+- [x] Vite+ build (~59KB)
+- [x] F1 Help dialog, F9 Settings dialog
+- [x] Autocomplete popup with plugin + buffer-word completions
+- [x] Inline diagnostics (F4) + validator with debounce
+- [x] Debug logger (evlog + file drain, red DEBUG badge)
+- [x] Update banner on startup (npm registry check, 6h cache)
+- [x] Standalone Bun-compiled binary (~95 MB, `jano update` detects install method)
 
 ## Architecture Details
 
@@ -107,7 +116,11 @@
 
 **Plugin interface** (`@jano-editor/plugin-types` → `LanguagePlugin`):
 
-- `highlight()`, `onKeyDown()`, `onCursorAction()`, `onFormat()`, `onSave()`, `onValidate()`, `onOpen()`
+- Highlighting: `highlight` (regex patterns), `highlightLine` (custom tokenizer with multiline access)
+- Edit hooks: `onCursorAction`, `onKeyDown`, `onFormat`, `onSave`, `onOpen`
+- Validation: `onValidate` (debounced, returns `Diagnostic[]`)
+- Autocomplete: `onComplete` (returns `CompletionItem[]`)
+- All hooks are called through `callPluginHook()` which isolates crashes and logs failures with stack traces in debug mode
 
 **Installation:** ZIP download from `https://janoeditor.dev/api/plugins/`, extracted via `adm-zip`
 
@@ -119,21 +132,31 @@
 - `adm-zip` - ZIP extraction for plugin installation. Pure JS, no native bindings.
 - **No native/C++ addons in runtime.** All native deps (oxfmt bindings etc.) are dev-only.
 
-### Standalone Binary Distribution (planned)
+### Standalone Binary Distribution
 
-**Goal:** `curl | bash` installer that downloads a single binary instead of requiring npm/Node.
+`bun build --compile` is in use. Final binary is ~95 MB (includes the Bun runtime) and has zero external requirements — no Node, no npm. Cross-compile flags: `--target=bun-linux-x64`, `--target=bun-darwin-arm64`, `--target=bun-windows-x64`.
 
-**Bun compile is the most promising approach:**
+Dynamic plugin loading via `await import(pathToFileURL(...).href)` works from the compiled binary. `jano update` detects the install method (`npm` / `brew` / `standalone` / `dev`) and upgrades accordingly — npm via `npm install -g`, standalone via download + atomic rename of `process.execPath`.
 
-- `bun build --compile` supports runtime `import()` from external files → plugin system should work
-- Cross-compile built-in: `--target=bun-linux-x64`, `--target=bun-darwin-arm64`
-- No native addons to worry about
+### Rendering Pipeline
 
-**Test with:** `bun build ./packages/editor/dist/cli.js --compile --outfile jano && ./jano plugin list`
+The render cycle has three steps that MUST happen in order:
 
-**Key concern:** Dynamic plugin loading (`import(pathToFileURL(...))`) must work from compiled binary. Bun supports this, Node SEA does not (would need `createRequire` workaround).
+1. `render()` in `render.ts` — draws editor content, title bar, status bar, help bar, flushes
+2. Overlays — `renderCompletionPopup()`, then `drawAlert()`, each flushes
+3. `positionCursor()` — exported from `render.ts`, called as the LAST step of `renderView()` in `index.ts`. Re-positions the terminal cursor on the primary editor cursor so preceding flushes don't leave the blink at the end of the last written cell.
 
-**Node SEA alternative:** More restrictive with dynamic imports, harder to make plugin loading work. Only consider if Bun proves incompatible.
+Never call `screen.moveTo` / `screen.showCursor` from inside `render()` or an overlay — the subsequent overlay flush will overwrite it.
+
+### Debug Logging
+
+When `JANO_DEBUG=1` (or `--debug` flag), events are written to `~/.cache/jano/logs/YYYY-MM-DD.jsonl` via `evlog` + a batched drain pipeline (preserves ordering). No output in non-debug mode. See `utils/logger.ts`. Plugin hook calls go through `callPluginHook()` which logs:
+
+- `plugin_hook_result` — plugin returned an edit
+- `plugin_hook_slow` — plugin took ≥5ms without a result
+- `plugin_hook_failed` — plugin crashed (with stack trace)
+
+Silent when plugins return null/undefined and complete quickly — no per-keystroke spam.
 
 ## Code Conventions
 
@@ -143,3 +166,35 @@
 - No external UI libs - custom terminal rendering
 - Plugins must not know about editor internals
 - Editor must not know about formatting rules
+
+## Writing Style for Issues, PRs, Commits
+
+- Keep it human and simple. No corporate speak, no walls of bullet points, no "## Test Plan" sections for small features.
+- Short PRs get a 1-2 sentence description, not a template.
+- Issues read like a real person wrote them: what's wrong, what should happen, maybe a quick example. Skip the "Acceptance Criteria" scaffolding.
+- Commit messages: short, lowercase, no "Co-Authored-By" footers.
+
+## Keeping Docs in Sync
+
+Whenever a feature ships, user-facing docs MUST be updated in the same change:
+
+- **`README.md`** (repo root) — the longer read. Feature list, full shortcut table, plugin list, install instructions. Can be more verbose, allowed to be reading material.
+- **`packages/editor/README.md`** — **this is the npm page**. Must hit hard with the wow features right at the top (multi-cursor, autocomplete, plugins, zero bloat, 100% JS). No dry checklists — frame it as "Why jano?" with punchy one-liners. But must not miss any user-facing capability.
+- **`~/projects/janoeditor.dev/app/pages/index.vue`** — landing page feature cards, video showcases, stats bar
+- **`~/projects/janoeditor.dev/app/pages/docs.vue`** — plugin interface hooks, code examples, tips
+- **`~/projects/janoeditor.dev/i18n/locales/{en,de}.json`** — all translated strings for the above pages
+- **This `CLAUDE.md`** — if architecture, packages, commands, or conventions changed
+
+Rule: if someone lands on janoeditor.dev or npmjs.com five minutes after a release, they should see the new feature. Stale docs are treated as a release bug.
+
+## Debug Logging Convention
+
+**Goal:** In debug mode, jano writes structured logs to a file. 99% of bugs should be diagnosable from those logs alone — without reproducing locally.
+
+- Debug mode is enabled via `--debug` flag or `JANO_DEBUG=1` env var.
+- Logs go to `~/.cache/jano/logs/YYYY-MM-DD.jsonl` (rotated daily, max 7 days kept). When debug is off, nothing is logged.
+- A red `DEBUG` badge is shown in the top title bar so the user knows debug mode is active.
+- Every new feature ships with debug logs. When adding code, log the relevant state transitions, inputs, errors. Default to "more logs" — they're behind the debug flag anyway.
+- Log events are structured (`{ action, ...fields }`, not prose). Use `<subsystem>_<verb>` for action names (e.g. `file_save_done`, `plugin_hook_failed`).
+- Plugin errors use the structured-error pattern: `why` / `fix` / `link`.
+- Hot paths (keystrokes, renders) are NEVER logged per-event. Plugin hooks are silent when they return null and run fast — see `callPluginHook` in `plugins/call.ts`.
