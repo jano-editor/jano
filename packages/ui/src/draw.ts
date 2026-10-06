@@ -176,7 +176,14 @@ export function createDraw(screen: Screen): Draw {
             out += reset + cell.style;
             lastStyle = cell.style;
           }
-          out += cell.char;
+          if (buffer[y][x + 1]?.char === "") {
+            // terminals disagree on how wide some glyphs are (❤️ often counts as one column).
+            // paint the right half as a styled space first, then draw the glyph over it and
+            // jump to the next cell explicitly instead of trusting the terminal's advance.
+            out += `\x1b[${x + 2}G \x1b[${x + 1}G${cell.char}\x1b[${x + 3}G`;
+          } else {
+            out += cell.char;
+          }
         }
       }
       out += reset;
