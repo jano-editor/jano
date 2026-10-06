@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { nextBoundary, prevBoundary } from "./text-layout.ts";
+import { colAt, nextBoundary, prevBoundary } from "./text-layout.ts";
 
 export type Eol = "\n" | "\r\n";
 
@@ -171,7 +171,9 @@ export function insertTab(
   insertSpaces = true,
 ): number {
   const line = state.lines[y];
-  const insert = insertSpaces ? " ".repeat(tabSize) : "\t";
+  // spaces fill up to the next tab stop, measured in screen columns (emoji count double)
+  const size = Math.max(1, Math.floor(tabSize) || 1);
+  const insert = insertSpaces ? " ".repeat(size - (colAt(line, x, size) % size)) : "\t";
   state.lines[y] = line.substring(0, x) + insert + line.substring(x);
   state.dirty = true;
   return x + insert.length;

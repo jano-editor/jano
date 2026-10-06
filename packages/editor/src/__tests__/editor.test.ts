@@ -135,18 +135,52 @@ describe("editor operations", () => {
   });
 
   describe("insertTab", () => {
-    it("defaults to 2 spaces", () => {
+    it("defaults to a tab size of 2", () => {
       const e = makeEditor(["abc"]);
-      const newX = insertTab(e, 1, 0);
-      expect(e.lines[0]).toBe("a  bc");
-      expect(newX).toBe(3);
+      const newX = insertTab(e, 0, 0);
+      expect(e.lines[0]).toBe("  abc");
+      expect(newX).toBe(2);
     });
 
-    it("inserts tabSize spaces when insertSpaces=true", () => {
+    it("fills spaces up to the next tab stop", () => {
       const e = makeEditor(["abc"]);
       const newX = insertTab(e, 1, 0, 4, true);
-      expect(e.lines[0]).toBe("a    bc");
-      expect(newX).toBe(5);
+      expect(e.lines[0]).toBe("a   bc");
+      expect(newX).toBe(4);
+    });
+
+    it("inserts a full tab size when already on a tab stop", () => {
+      const e = makeEditor(["abcd"]);
+      insertTab(e, 4, 0, 4, true);
+      expect(e.lines[0]).toBe("abcd    ");
+    });
+
+    it("lines up after text of different length", () => {
+      const a = makeEditor(["asd"]);
+      const b = makeEditor([""]);
+      insertTab(a, 3, 0, 4, true);
+      insertTab(b, 0, 0, 4, true);
+      expect(a.lines[0].length).toBe(b.lines[0].length);
+    });
+
+    it("counts emoji as two columns", () => {
+      const e = makeEditor(["😀"]); // 2 columns, so 2 more spaces to reach column 4
+      insertTab(e, 2, 0, 4, true);
+      expect(e.lines[0]).toBe("😀  ");
+    });
+
+    it("counts a real tab before the cursor", () => {
+      const e = makeEditor(["\tx"]); // x at column 4
+      insertTab(e, 2, 0, 4, true);
+      expect(e.lines[0]).toBe("\tx   ");
+    });
+
+    it("never inserts zero or negative spaces for a broken tab size", () => {
+      for (const size of [0, -4, Number.NaN, 2.5]) {
+        const e = makeEditor(["ab"]);
+        const newX = insertTab(e, 2, 0, size, true);
+        expect(newX).toBeGreaterThan(2);
+      }
     });
 
     it("inserts a real tab when insertSpaces=false", () => {
