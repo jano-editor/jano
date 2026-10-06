@@ -179,3 +179,26 @@ describe("saveAs", () => {
     expect(e.dirty).toBe(true);
   });
 });
+
+describe("grapheme-aware deletion", () => {
+  const EMOJI = "😀";
+
+  it("backspace removes a whole emoji", () => {
+    const e = makeEditor([`a${EMOJI}b`]);
+    const pos = deleteCharBack(e, 3, 0);
+    expect(e.lines).toEqual(["ab"]);
+    expect(pos).toEqual({ x: 1, y: 0 });
+  });
+
+  it("delete removes a whole emoji", () => {
+    const e = makeEditor([`a${EMOJI}b`]);
+    deleteCharForward(e, 1, 0);
+    expect(e.lines).toEqual(["ab"]);
+  });
+
+  it("never leaves a lone surrogate behind", () => {
+    const e = makeEditor([EMOJI]);
+    deleteCharBack(e, 2, 0);
+    expect(e.lines).toEqual([""]);
+  });
+});

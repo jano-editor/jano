@@ -380,3 +380,43 @@ describe("CursorManager", () => {
     });
   });
 });
+
+describe("CursorManager with tabs and wide characters", () => {
+  const EMOJI = "😀";
+
+  it("left/right step over a whole emoji", () => {
+    const cm = createCursorManager();
+    const lines = [`a${EMOJI}b`];
+    cm.primary.x = 1;
+    cm.moveAll("right", lines, 0, 4);
+    expect(cm.primary.x).toBe(3);
+    cm.moveAll("left", lines, 0, 4);
+    expect(cm.primary.x).toBe(1);
+  });
+
+  it("up/down keep the screen column across tabs", () => {
+    const cm = createCursorManager();
+    const lines = ["\tx", "abcdx"];
+    cm.primary.x = 1; // after the tab, column 4
+    cm.moveAll("down", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 4, y: 1 });
+    cm.moveAll("up", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 1, y: 0 });
+  });
+
+  it("up/down keep the screen column across emoji", () => {
+    const cm = createCursorManager();
+    const lines = [`${EMOJI}x`, "abx"];
+    cm.primary.x = 2; // after the emoji, column 2
+    cm.moveAll("down", lines, 0, 4);
+    expect(cm.primary).toMatchObject({ x: 2, y: 1 });
+  });
+
+  it("ensureVisible scrolls by screen columns", () => {
+    const cm = createCursorManager();
+    const lines = ["\t\tx"];
+    cm.primary.x = 2; // column 8
+    cm.ensureVisible(5, 10, lines, 4);
+    expect(cm.scrollX).toBe(4);
+  });
+});

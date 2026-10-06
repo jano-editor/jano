@@ -10,6 +10,7 @@ import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
 import { callPluginHook } from "./plugins/call.ts";
 import { getEditorSettings } from "./settings.ts";
+import { colAt, idxAtCol } from "./text-layout.ts";
 
 // strip control characters except \t (0x09) and \n (0x0a)
 function stripControlChars(text: string): string {
@@ -134,11 +135,14 @@ export function handleKey(
     (key.name === "up" || key.name === "down") && key.ctrl && (isWindows ? key.alt : key.shift);
   if (isMultiCursorCombo) {
     const allCursors = cm.all;
+    // new cursors line up with the primary's screen column
+    const { tabSize } = getEditorSettings();
+    const primaryCol = colAt(editor.lines[cm.primary.y], cm.primary.x, tabSize);
     if (key.name === "up") {
       const topmost = Math.min(...allCursors.map((c) => c.y));
       const newY = topmost - 1;
       if (newY >= 0) {
-        const newX = Math.min(cm.primary.x, editor.lines[newY].length);
+        const newX = idxAtCol(editor.lines[newY], primaryCol, tabSize);
         cm.addAbove(newX, newY);
         cm.dedup();
       }
@@ -146,7 +150,7 @@ export function handleKey(
       const bottommost = Math.max(...allCursors.map((c) => c.y));
       const newY = bottommost + 1;
       if (newY < editor.lines.length) {
-        const newX = Math.min(cm.primary.x, editor.lines[newY].length);
+        const newX = idxAtCol(editor.lines[newY], primaryCol, tabSize);
         cm.addBelow();
         const last = cm.all[cm.all.length - 1];
         last.x = newX;
@@ -171,7 +175,7 @@ export function handleKey(
   // shift+arrow: select char/line
   if (key.shift && ["up", "down", "left", "right", "home", "end"].includes(key.name)) {
     cm.startSelectionAll();
-    cm.moveAll(key.name as any, editor.lines, screen.height - 2);
+    cm.moveAll(key.name as any, editor.lines, screen.height - 2, getEditorSettings().tabSize);
     cm.clampAll(editor.lines);
 
     // shift+up/down with multi-cursor: merge into one selection
@@ -428,12 +432,12 @@ export function handleKey(
     case "home":
     case "end":
       cm.clearSelectionAll();
-      cm.moveAll(key.name, editor.lines, 0);
+      cm.moveAll(key.name, editor.lines, 0, getEditorSettings().tabSize);
       break;
     case "pageup":
     case "pagedown":
       cm.clearSelectionAll();
-      cm.moveAll(key.name, editor.lines, screen.height - 2);
+      cm.moveAll(key.name, editor.lines, screen.height - 2, getEditorSettings().tabSize);
       break;
 
     // enter

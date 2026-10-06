@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { nextBoundary, prevBoundary } from "./text-layout.ts";
 
 export interface EditorState {
   lines: string[];
@@ -68,10 +69,12 @@ export function insertNewline(state: EditorState, x: number, y: number): { x: nu
 
 export function deleteCharBack(state: EditorState, x: number, y: number): { x: number; y: number } {
   if (x > 0) {
+    // whole grapheme, so emoji and combined characters are never split
     const line = state.lines[y];
-    state.lines[y] = line.substring(0, x - 1) + line.substring(x);
+    const start = prevBoundary(line, x);
+    state.lines[y] = line.substring(0, start) + line.substring(x);
     state.dirty = true;
-    return { x: x - 1, y };
+    return { x: start, y };
   }
   if (y > 0) {
     const newX = state.lines[y - 1].length;
@@ -119,7 +122,7 @@ export function deleteWordForward(state: EditorState, x: number, y: number, boun
 export function deleteCharForward(state: EditorState, x: number, y: number) {
   if (x < state.lines[y].length) {
     const line = state.lines[y];
-    state.lines[y] = line.substring(0, x) + line.substring(x + 1);
+    state.lines[y] = line.substring(0, x) + line.substring(nextBoundary(line, x));
   } else if (y < state.lines.length - 1) {
     state.lines[y] += state.lines[y + 1];
     state.lines.splice(y + 1, 1);

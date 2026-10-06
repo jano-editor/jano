@@ -1,4 +1,5 @@
 import type { Pos, SelectionRange } from "./types.ts";
+import { colAt, idxAtCol, nextBoundary, prevBoundary } from "./text-layout.ts";
 
 export interface SingleCursor {
   x: number;
@@ -57,11 +58,12 @@ export interface CursorManager {
   // run a function on every cursor, any order (for navigation)
   forEachAll(fn: (c: SingleCursor, isPrimary: boolean) => void): void;
 
-  // move all cursors
+  // move all cursors (up/down keep the screen column, so tabSize is needed)
   moveAll(
     direction: "up" | "down" | "left" | "right" | "home" | "end" | "pageup" | "pagedown",
     lines: string[],
     pageSize: number,
+    tabSize: number,
   ): void;
 
   // move all cursors by word
@@ -76,8 +78,8 @@ export interface CursorManager {
   // remove duplicate cursors
   dedup(): void;
 
-  // ensure primary cursor is visible in viewport
-  ensureVisible(viewW: number, viewH: number): void;
+  // ensure primary cursor is visible in viewport (scrollX is in screen columns)
+  ensureVisible(viewW: number, viewH: number, lines: string[], tabSize: number): void;
 
   // delete the selection of a specific cursor from lines
   deleteSelection(c: SingleCursor, lines: string[]): void;
@@ -139,7 +141,7 @@ function clampCursor(c: SingleCursor, lines: string[]) {
 }
 
 function moveLeftOne(c: SingleCursor, lines: string[]) {
-  if (c.x > 0) c.x--;
+  if (c.x > 0) c.x = prevBoundary(lines[c.y], c.x);
   else if (c.y > 0) {
     c.y--;
     c.x = lines[c.y].length;
@@ -147,7 +149,7 @@ function moveLeftOne(c: SingleCursor, lines: string[]) {
 }
 
 function moveRightOne(c: SingleCursor, lines: string[]) {
-  if (c.x < lines[c.y].length) c.x++;
+  if (c.x < lines[c.y].length) c.x = nextBoundary(lines[c.y], c.x);
   else if (c.y < lines.length - 1) {
     c.y++;
     c.x = 0;
@@ -278,14 +280,20 @@ export function createCursorManager(): CursorManager {
       cursors.forEach((c, i) => fn(c, i === 0));
     },
 
-    moveAll(direction, lines, pageSize) {
+    moveAll(direction, lines, pageSize, tabSize) {
+      // vertical moves keep the screen column, not the string index (tabs, wide chars)
+      const moveVertical = (c: SingleCursor, dy: number) => {
+        const col = colAt(lines[c.y] ?? "", c.x, tabSize);
+        c.y = Math.max(0, Math.min(lines.length - 1, c.y + dy));
+        c.x = idxAtCol(lines[c.y], col, tabSize);
+      };
       for (const c of cursors) {
         switch (direction) {
           case "up":
-            c.y--;
+            moveVertical(c, -1);
             break;
           case "down":
-            c.y++;
+            moveVertical(c, 1);
             break;
           case "left":
             moveLeftOne(c, lines);
@@ -300,10 +308,10 @@ export function createCursorManager(): CursorManager {
             c.x = lines[c.y]?.length ?? 0;
             break;
           case "pageup":
-            c.y -= pageSize;
+            moveVertical(c, -pageSize);
             break;
           case "pagedown":
-            c.y += pageSize;
+            moveVertical(c, pageSize);
             break;
         }
       }
@@ -369,12 +377,13 @@ export function createCursorManager(): CursorManager {
       }
     },
 
-    ensureVisible(viewW, viewH) {
+    ensureVisible(viewW, viewH, lines, tabSize) {
       const p = cursors[0];
       if (p.y < scrollY) scrollY = p.y;
       if (p.y >= scrollY + viewH) scrollY = p.y - viewH + 1;
-      if (p.x < scrollX) scrollX = p.x;
-      if (p.x >= scrollX + viewW) scrollX = p.x - viewW + 1;
+      const col = colAt(lines[p.y] ?? "", p.x, tabSize);
+      if (col < scrollX) scrollX = col;
+      if (col >= scrollX + viewW) scrollX = col - viewW + 1;
     },
 
     deleteSelection(c, lines) {
