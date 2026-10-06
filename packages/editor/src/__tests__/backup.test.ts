@@ -33,7 +33,13 @@ function writeOrphan(pid: number, content: string, savedAt = Date.now()) {
 describe("createBackupManager", () => {
   it("writes a backup after the idle delay", async () => {
     const mgr = createBackupManager(dir, timing);
-    mgr.schedule({ lines: ["hello", "world"], filePath: "rel.txt", dirty: true });
+    mgr.schedule({
+      lines: ["hello", "world"],
+      filePath: "rel.txt",
+      dirty: true,
+      eol: "\n" as const,
+      bom: false,
+    });
     expect(files()).toEqual([]);
 
     await sleep(50);
@@ -46,14 +52,14 @@ describe("createBackupManager", () => {
 
   it("does nothing while the buffer is clean", async () => {
     const mgr = createBackupManager(dir, timing);
-    mgr.schedule({ lines: ["x"], filePath: "", dirty: false });
+    mgr.schedule({ lines: ["x"], filePath: "", dirty: false, eol: "\n" as const, bom: false });
     await sleep(50);
     expect(files()).toEqual([]);
   });
 
   it("removes the backup once the buffer is clean again", async () => {
     const mgr = createBackupManager(dir, timing);
-    const state = { lines: ["x"], filePath: "", dirty: true };
+    const state = { lines: ["x"], filePath: "", dirty: true, eol: "\n" as const, bom: false };
     mgr.schedule(state);
     await sleep(50);
     expect(files()).toHaveLength(1);
@@ -65,7 +71,7 @@ describe("createBackupManager", () => {
 
   it("leaves no file when discarded during an in-flight write", async () => {
     const mgr = createBackupManager(dir, { idleMs: 0, maxWaitMs: 0 });
-    mgr.schedule({ lines: ["x"], filePath: "", dirty: true });
+    mgr.schedule({ lines: ["x"], filePath: "", dirty: true, eol: "\n" as const, bom: false });
     // let the timer fire so the async write starts, then discard right away
     await sleep(1);
     mgr.discard();
@@ -73,9 +79,16 @@ describe("createBackupManager", () => {
     expect(files()).toEqual([]);
   });
 
+  it("stores line ending and BOM", () => {
+    const mgr = createBackupManager(dir, timing);
+    mgr.writeNow({ lines: ["a"], filePath: "", dirty: true, eol: "\r\n", bom: true });
+    const data = JSON.parse(readFileSync(join(dir, files()[0]), "utf8"));
+    expect([data.eol, data.bom]).toEqual(["\r\n", true]);
+  });
+
   it("writeNow writes synchronously", () => {
     const mgr = createBackupManager(dir, timing);
-    mgr.writeNow({ lines: ["crash"], filePath: "", dirty: true });
+    mgr.writeNow({ lines: ["crash"], filePath: "", dirty: true, eol: "\n" as const, bom: false });
     const [name] = files();
     expect(JSON.parse(readFileSync(join(dir, name), "utf8")).content).toBe("crash");
   });

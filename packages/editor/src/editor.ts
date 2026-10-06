@@ -1,12 +1,39 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { nextBoundary, prevBoundary } from "./text-layout.ts";
 
+export type Eol = "\n" | "\r\n";
+
 export interface EditorState {
   lines: string[];
   filePath: string;
   dirty: boolean;
   clipboardParts: string[];
   isNewFile: boolean;
+  /** line ending used when saving, detected on load */
+  eol: Eol;
+  /** whether the file started with a UTF-8 BOM, restored on save */
+  bom: boolean;
+}
+
+const BOM = "\uFEFF";
+
+/** Splits raw file content into lines and detects line ending and BOM. */
+export function parseContent(raw: string): { lines: string[]; eol: Eol; bom: boolean } {
+  const bom = raw.startsWith(BOM);
+  const text = bom ? raw.slice(1) : raw;
+  const crlf = text.match(/\r\n/g)?.length ?? 0;
+  const lf = (text.match(/\n/g)?.length ?? 0) - crlf;
+  return {
+    // mixed files get normalized to whichever ending is more common
+    lines: text.split(/\r?\n/),
+    eol: crlf > lf ? "\r\n" : "\n",
+    bom,
+  };
+}
+
+/** Inverse of parseContent: what gets written to disk. */
+export function serializeContent(state: Pick<EditorState, "lines" | "eol" | "bom">): string {
+  return (state.bom ? BOM : "") + state.lines.join(state.eol);
 }
 
 export function createEditor(filePath?: string): EditorState {
@@ -18,6 +45,8 @@ export function createEditor(filePath?: string): EditorState {
       dirty: false,
       clipboardParts: [],
       isNewFile: true,
+      eol: "\n",
+      bom: false,
     };
   }
 
@@ -29,23 +58,27 @@ export function createEditor(filePath?: string): EditorState {
       dirty: false,
       clipboardParts: [],
       isNewFile: true,
+      eol: "\n",
+      bom: false,
     };
   }
 
   // existing file
-  const lines = readFileSync(filePath, "utf8").split("\n");
+  const { lines, eol, bom } = parseContent(readFileSync(filePath, "utf8"));
   return {
     lines,
     filePath,
     dirty: false,
     clipboardParts: [],
     isNewFile: false,
+    eol,
+    bom,
   };
 }
 
 export function saveAs(state: EditorState, filePath: string) {
   // write first, so a failed save doesn't leave filePath pointing at the bad target
-  writeFileSync(filePath, state.lines.join("\n"), "utf8");
+  writeFileSync(filePath, serializeContent(state), "utf8");
   state.filePath = filePath;
   state.dirty = false;
   state.isNewFile = false;

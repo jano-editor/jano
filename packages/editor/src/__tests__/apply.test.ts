@@ -4,7 +4,15 @@ import { createCursorManager } from "../cursor-manager.ts";
 import type { EditorState } from "../editor.ts";
 
 function makeEditor(lines: string[]): EditorState {
-  return { lines, filePath: "test", dirty: false, clipboardParts: [], isNewFile: false };
+  return {
+    lines,
+    filePath: "test",
+    dirty: false,
+    clipboardParts: [],
+    isNewFile: false,
+    eol: "\n",
+    bom: false,
+  };
 }
 
 describe("applyEditResult", () => {

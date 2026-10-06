@@ -616,6 +616,8 @@ async function start() {
     filePath: filePath || null,
     isNewFile: editor.isNewFile,
     lineCount: editor.lines.length,
+    eol: editor.eol === "\r\n" ? "crlf" : "lf",
+    bom: editor.bom,
   });
 
   if (filePath) {

@@ -21,6 +21,9 @@ export interface BackupData {
   filePath: string; // absolute, "" for untitled buffers
   savedAt: number;
   content: string;
+  // file format to restore on save, missing in backups from older versions
+  eol?: "\n" | "\r\n";
+  bom?: boolean;
 }
 
 export interface BackupEntry extends BackupData {
@@ -32,6 +35,8 @@ export interface BackupSource {
   lines: string[];
   filePath: string;
   dirty: boolean;
+  eol: "\n" | "\r\n";
+  bom: boolean;
 }
 
 export interface BackupManager {
@@ -214,6 +219,8 @@ function serialize(state: BackupSource): string {
     filePath: state.filePath ? resolve(state.filePath) : "",
     savedAt: Date.now(),
     content: state.lines.join("\n"),
+    eol: state.eol,
+    bom: state.bom,
   };
   return JSON.stringify(data);
 }

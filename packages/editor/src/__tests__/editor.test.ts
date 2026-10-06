@@ -11,6 +11,8 @@ import {
   moveLinesDown,
   insertTab,
   saveAs,
+  parseContent,
+  serializeContent,
 } from "../editor.ts";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
 
@@ -200,5 +202,46 @@ describe("grapheme-aware deletion", () => {
     const e = makeEditor([EMOJI]);
     deleteCharBack(e, 2, 0);
     expect(e.lines).toEqual([""]);
+  });
+});
+
+describe("file format", () => {
+  const roundtrip = (raw: string) => serializeContent(parseContent(raw));
+
+  it("keeps files byte-identical on open + save", () => {
+    for (const raw of [
+      "a\nb\n",
+      "a\nb",
+      "a\r\nb\r\n",
+      "a\r\nb",
+      "\uFEFFa\r\nb\r\n",
+      "\uFEFFa\nb",
+      "",
+      "\n",
+      "\r\n",
+    ]) {
+      expect(roundtrip(raw)).toBe(raw);
+    }
+  });
+
+  it("strips CR from lines of CRLF files", () => {
+    const { lines, eol } = parseContent("a\r\nb\r\n");
+    expect(lines).toEqual(["a", "b", ""]);
+    expect(eol).toBe("\r\n");
+  });
+
+  it("strips the BOM from the first line", () => {
+    const { lines, bom } = parseContent("\uFEFFhello");
+    expect(lines).toEqual(["hello"]);
+    expect(bom).toBe(true);
+  });
+
+  it("normalizes mixed files to the more common line ending", () => {
+    expect(roundtrip("a\r\nb\r\nc\n")).toBe("a\r\nb\r\nc\r\n");
+    expect(roundtrip("a\nb\nc\r\n")).toBe("a\nb\nc\n");
+  });
+
+  it("leaves lone CR (not followed by LF) in the line", () => {
+    expect(parseContent("a\rb\n").lines).toEqual(["a\rb", ""]);
   });
 });
