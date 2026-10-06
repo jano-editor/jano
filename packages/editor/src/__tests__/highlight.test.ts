@@ -59,3 +59,57 @@ describe("tokenizeLine", () => {
     }
   });
 });
+
+describe("tokenizeLine with broken plugins", () => {
+  it("survives a throwing highlightLine", () => {
+    const plugin: LanguagePlugin = {
+      name: "Broken",
+      extensions: [".broken"],
+      highlightLine: () => {
+        throw new Error("boom");
+      },
+    };
+    expect(tokenizeLine("x", plugin, 0, ["x"])).toEqual([]);
+    expect(tokenizeLine("x", plugin, 0, ["x"])).toEqual([]);
+  });
+
+  it("ignores a non-array highlightLine result", () => {
+    const plugin = {
+      name: "Weird",
+      extensions: [".weird"],
+      highlightLine: () => null,
+    } as unknown as LanguagePlugin;
+    expect(tokenizeLine("x", plugin, 0, ["x"])).toEqual([]);
+  });
+
+  it("escapes regex characters in keywords", () => {
+    const plugin: LanguagePlugin = {
+      name: "Cpp",
+      extensions: [".cpp"],
+      highlight: { keywords: ["c++", "c", "int"] },
+    };
+    const tokens = tokenizeLine("c++ int x", plugin);
+    expect(tokens.map((t) => [t.start, t.end])).toEqual([
+      [0, 3],
+      [4, 7],
+    ]);
+  });
+
+  it("keeps word boundaries for plain keywords", () => {
+    const plugin: LanguagePlugin = {
+      name: "Kw",
+      extensions: [".kw"],
+      highlight: { keywords: ["in"] },
+    };
+    expect(tokenizeLine("int in", plugin).map((t) => t.start)).toEqual([4]);
+  });
+
+  it("ignores empty keywords", () => {
+    const plugin: LanguagePlugin = {
+      name: "Empty",
+      extensions: [".empty"],
+      highlight: { keywords: ["", "let"] },
+    };
+    expect(tokenizeLine("let x", plugin)).toEqual([{ start: 0, end: 3, type: "keyword" }]);
+  });
+});

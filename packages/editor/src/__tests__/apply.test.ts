@@ -95,7 +95,7 @@ describe("applyEditResult", () => {
   });
 
   it("cursors in result update target cursor", () => {
-    const e = makeEditor(["test"]);
+    const e = makeEditor(Array.from({ length: 6 }, () => "0123456789ab"));
     const cm = createCursorManager();
     cm.primary.x = 0;
     cm.primary.y = 0;
@@ -133,5 +133,67 @@ describe("applyEditResult", () => {
     // extra cursor should be updated
     expect(extra.x).toBe(3);
     expect(extra.y).toBe(1);
+  });
+});
+
+describe("applyEditResult with invalid plugin results", () => {
+  it("clamps edits outside the buffer instead of crashing", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    applyEditResult(
+      { edits: [{ range: { start: { line: 5, col: 99 }, end: { line: 5, col: 99 } }, text: "!" }] },
+      e,
+      cm,
+    );
+    expect(e.lines).toEqual(["abc!"]);
+  });
+
+  it("swaps reversed ranges", () => {
+    const e = makeEditor(["hello"]);
+    const cm = createCursorManager();
+    applyEditResult(
+      { edits: [{ range: { start: { line: 0, col: 4 }, end: { line: 0, col: 1 } }, text: "" }] },
+      e,
+      cm,
+    );
+    expect(e.lines).toEqual(["ho"]);
+  });
+
+  it("keeps one empty line for an empty replaceAll", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    applyEditResult({ replaceAll: [] }, e, cm);
+    expect(e.lines).toEqual([""]);
+  });
+
+  it("ignores a replaceAll that is not a string array", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    applyEditResult({ replaceAll: [1, 2] as unknown as string[] }, e, cm);
+    expect(e.lines).toEqual(["abc"]);
+    expect(e.dirty).toBe(false);
+  });
+
+  it("skips malformed edits and applies valid ones", () => {
+    const e = makeEditor(["abc"]);
+    const cm = createCursorManager();
+    const edits = [
+      { range: null, text: "x" },
+      { range: { start: { line: 0, col: 0 }, end: { line: 0, col: 0 } }, text: ">" },
+    ] as unknown as NonNullable<Parameters<typeof applyEditResult>[0]["edits"]>;
+    applyEditResult({ edits }, e, cm);
+    expect(e.lines).toEqual([">abc"]);
+  });
+
+  it("clamps cursors into the buffer", () => {
+    const e = makeEditor(["ab", "c"]);
+    const cm = createCursorManager();
+    applyEditResult(
+      { cursors: [{ position: { line: 10, col: 10 }, anchor: { line: -1, col: -1 } }] },
+      e,
+      cm,
+    );
+    expect([cm.primary.x, cm.primary.y]).toEqual([1, 1]);
+    expect(cm.primary.anchor).toEqual({ x: 0, y: 0 });
   });
 });
