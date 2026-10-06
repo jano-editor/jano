@@ -95,10 +95,11 @@ jobs:
               --generate-notes \
               --latest
           else
+            # only editor releases carry binaries, so only they may become "latest"
             gh release create "${{ github.ref_name }}" \
               --title "${{ steps.pkg.outputs.name }} ${{ steps.pkg.outputs.version }}" \
               --generate-notes \
-              --latest
+              --latest=false
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

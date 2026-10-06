@@ -38,6 +38,30 @@ export function compareVersions(a: string, b: string): number {
   return pa.pre.localeCompare(pb.pre, undefined, { numeric: true });
 }
 
+export interface GithubRelease {
+  tag_name: string;
+  draft: boolean;
+  assets: { name: string }[];
+}
+
+const EDITOR_TAG = "editor-v";
+
+/**
+ * Newest editor release from a GitHub releases page. ui and plugin-types releases live
+ * in the same repo, so neither GitHub's "latest" flag nor list order can be trusted.
+ */
+export function pickLatestEditorRelease(releases: GithubRelease[]): GithubRelease | null {
+  const editors = releases.filter((r) => !r.draft && r.tag_name.startsWith(EDITOR_TAG));
+  if (editors.length === 0) return null;
+  return editors.reduce((best, r) =>
+    compareVersions(editorVersion(r), editorVersion(best)) > 0 ? r : best,
+  );
+}
+
+export function editorVersion(release: GithubRelease): string {
+  return release.tag_name.slice(EDITOR_TAG.length);
+}
+
 function isValidCache(v: unknown): v is CacheEntry {
   if (!v || typeof v !== "object") return false;
   const obj = v as Record<string, unknown>;
