@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, afterAll } from "bun:test";
 import {
   createEditor,
   insertChar,
@@ -13,7 +13,12 @@ import {
   saveAs,
   parseContent,
   serializeContent,
+  readTextFile,
+  OpenError,
 } from "../editor.ts";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
 
 function makeEditor(lines: string[]) {
@@ -277,5 +282,54 @@ describe("file format", () => {
 
   it("leaves lone CR (not followed by LF) in the line", () => {
     expect(parseContent("a\rb\n").lines).toEqual(["a\rb", ""]);
+  });
+});
+
+describe("readTextFile", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jano-read-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const file = (name: string, bytes: number[] | string) => {
+    const path = join(dir, name);
+    writeFileSync(path, typeof bytes === "string" ? bytes : Buffer.from(bytes));
+    return path;
+  };
+
+  it("reads valid UTF-8 and keeps the BOM for parseContent", () => {
+    const { text, invalidUtf8 } = readTextFile(file("bom.txt", [0xef, 0xbb, 0xbf, 0x68, 0x69]));
+    expect(text).toBe("\uFEFFhi");
+    expect(invalidUtf8).toBe(false);
+    expect(parseContent(text).bom).toBe(true);
+  });
+
+  it("opens invalid UTF-8 but flags it", () => {
+    const { text, invalidUtf8 } = readTextFile(file("latin1.txt", [0x63, 0x61, 0x66, 0xe9]));
+    expect(invalidUtf8).toBe(true);
+    expect(text).toBe("caf\uFFFD");
+  });
+
+  it("refuses binary files", () => {
+    expect(() => readTextFile(file("image.png", [0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))).toThrow(
+      "binary",
+    );
+  });
+
+  it("names UTF-16 instead of calling it binary", () => {
+    expect(() => readTextFile(file("utf16.txt", [0xff, 0xfe, 0x68, 0x00]))).toThrow("UTF-16");
+  });
+
+  it("explains folders", () => {
+    expect(() => readTextFile(dir)).toThrow(OpenError);
+    expect(() => readTextFile(dir)).toThrow("is a directory");
+  });
+
+  it("refuses devices and pipes instead of reading forever", () => {
+    expect(() => readTextFile("/dev/zero")).toThrow("not a regular file");
+  });
+
+  it.skipIf(process.getuid?.() === 0)("explains missing read permission", () => {
+    const path = file("secret.txt", "x");
+    chmodSync(path, 0o000);
+    expect(() => readTextFile(path)).toThrow("No permission");
+    chmodSync(path, 0o644);
   });
 });

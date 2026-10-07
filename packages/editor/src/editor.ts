@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
+import { writeFileSafely, type WriteMode } from "./safe-write.ts";
 import { colAt, nextBoundary, prevBoundary } from "./text-layout.ts";
 
 export type Eol = "\n" | "\r\n";
@@ -11,6 +12,8 @@ export interface EditorState {
   isNewFile: boolean;
   /** line ending used when saving, detected on load */
   eol: Eol;
+  /** the file had bytes that aren't valid UTF-8, saving replaces them with U+FFFD */
+  invalidUtf8: boolean;
   /** whether the file started with a UTF-8 BOM, restored on save */
   bom: boolean;
 }
@@ -47,6 +50,7 @@ export function createEditor(filePath?: string): EditorState {
       isNewFile: true,
       eol: "\n",
       bom: false,
+      invalidUtf8: false,
     };
   }
 
@@ -60,11 +64,13 @@ export function createEditor(filePath?: string): EditorState {
       isNewFile: true,
       eol: "\n",
       bom: false,
+      invalidUtf8: false,
     };
   }
 
   // existing file
-  const { lines, eol, bom } = parseContent(readFileSync(filePath, "utf8"));
+  const { text, invalidUtf8 } = readTextFile(filePath);
+  const { lines, eol, bom } = parseContent(text);
   return {
     lines,
     filePath,
@@ -73,15 +79,63 @@ export function createEditor(filePath?: string): EditorState {
     isNewFile: false,
     eol,
     bom,
+    invalidUtf8,
   };
 }
 
-export function saveAs(state: EditorState, filePath: string) {
+/** A file that can't be edited. The message is written for the user. */
+export class OpenError extends Error {}
+
+// like git: a NUL byte near the start means binary
+const BINARY_SNIFF_BYTES = 8000;
+
+/** Reads a file as UTF-8 text. Throws OpenError for folders, missing permissions and binary files. */
+export function readTextFile(filePath: string): { text: string; invalidUtf8: boolean } {
+  let buf: Buffer;
+  try {
+    // only regular files: reading a pipe blocks forever, /dev/zero never ends
+    const stat = statSync(filePath);
+    if (stat.isDirectory()) throw new OpenError(`${filePath} is a directory.`);
+    if (!stat.isFile()) {
+      throw new OpenError(`${filePath} is not a regular file (device, pipe or socket).`);
+    }
+    buf = readFileSync(filePath);
+  } catch (err) {
+    if (err instanceof OpenError) throw err;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EISDIR") throw new OpenError(`${filePath} is a directory.`);
+    if (code === "EACCES" || code === "EPERM") {
+      throw new OpenError(`No permission to read ${filePath}. Try sudo.`);
+    }
+    throw new OpenError(`Could not open ${filePath}: ${(err as Error).message}`);
+  }
+
+  // UTF-16 files are full of NUL bytes, say what they are instead of calling them binary
+  if ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff)) {
+    throw new OpenError(`${filePath} is UTF-16 encoded, jano only edits UTF-8.`);
+  }
+  if (buf.subarray(0, BINARY_SNIFF_BYTES).includes(0)) {
+    throw new OpenError(`${filePath} looks like a binary file, jano only edits text.`);
+  }
+
+  // ignoreBOM keeps a BOM in the text, so parseContent can detect and restore it
+  try {
+    return {
+      text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buf),
+      invalidUtf8: false,
+    };
+  } catch {
+    return { text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(buf), invalidUtf8: true };
+  }
+}
+
+export function saveAs(state: EditorState, filePath: string): WriteMode {
   // write first, so a failed save doesn't leave filePath pointing at the bad target
-  writeFileSync(filePath, serializeContent(state), "utf8");
+  const mode = writeFileSafely(filePath, serializeContent(state));
   state.filePath = filePath;
   state.dirty = false;
   state.isNewFile = false;
+  return mode;
 }
 
 export function insertChar(state: EditorState, x: number, y: number, ch: string): number {

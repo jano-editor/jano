@@ -297,7 +297,10 @@ export function render(
   // center: file info
   const modified = editor.dirty ? " ●" : "";
   // only shown when they differ from the default (LF, no BOM)
-  const format = `${editor.eol === "\r\n" ? " · CRLF" : ""}${editor.bom ? " · BOM" : ""}`;
+  const format =
+    (editor.eol === "\r\n" ? " · CRLF" : "") +
+    (editor.bom ? " · BOM" : "") +
+    (editor.invalidUtf8 ? " · invalid UTF-8" : "");
   const fileInfo = `${editor.lines.length} lines${format}${modified}`;
   const fileInfoX = Math.floor((w - fileInfo.length) / 2);
   draw.text(fileInfoX, statusY, fileInfo, {
