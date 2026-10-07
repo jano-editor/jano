@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { writeFileSafely, type WriteMode } from "./safe-write.ts";
 import { colAt, nextBoundary, prevBoundary } from "./text-layout.ts";
 
 export type Eol = "\n" | "\r\n";
@@ -76,12 +77,13 @@ export function createEditor(filePath?: string): EditorState {
   };
 }
 
-export function saveAs(state: EditorState, filePath: string) {
+export function saveAs(state: EditorState, filePath: string): WriteMode {
   // write first, so a failed save doesn't leave filePath pointing at the bad target
-  writeFileSync(filePath, serializeContent(state), "utf8");
+  const mode = writeFileSafely(filePath, serializeContent(state));
   state.filePath = filePath;
   state.dirty = false;
   state.isNewFile = false;
+  return mode;
 }
 
 export function insertChar(state: EditorState, x: number, y: number, ch: string): number {

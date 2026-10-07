@@ -77,9 +77,9 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
   await runSaveHook(s);
 
   try {
-    saveAs(s.editor, filePath);
+    const mode = saveAs(s.editor, filePath);
     s.reloadPlugin();
-    log.info({ action: "file_save_done", path: filePath });
+    log.info({ action: "file_save_done", path: filePath, mode });
     return true;
   } catch (err) {
     log.error({
