@@ -7,6 +7,7 @@ export interface EditorSettings {
   insertSpaces: boolean;
   lineNumbers: boolean;
   autoComplete: boolean;
+  startupAnimation: boolean;
 }
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   insertSpaces: true,
   lineNumbers: true,
   autoComplete: true,
+  startupAnimation: true,
 };
 
 export interface JanoConfig {

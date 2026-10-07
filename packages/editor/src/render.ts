@@ -1,4 +1,4 @@
-import type { Screen, Draw, RGB } from "@jano-editor/ui";
+import { drawReveal, type Screen, type Draw, type RGB, type RevealState } from "@jano-editor/ui";
 import type { EditorState } from "./editor.ts";
 import type { CursorManager } from "./cursor-manager.ts";
 import type { LanguagePlugin, Diagnostic } from "./plugins/types.ts";
@@ -9,6 +9,9 @@ import { getEditorSettings } from "./settings.ts";
 import { layoutLine, colAt, lineWidth } from "./text-layout.ts";
 
 const DEFAULT_FG: RGB = [171, 178, 191];
+export const TITLE_FG: RGB = [230, 200, 100];
+// jano brand color (#d250ef), also used on janoeditor.dev
+export const JANO_PINK: RGB = [210, 80, 239];
 const CONTROL_FG: RGB = [90, 95, 105];
 const SELECTION_BG: RGB = [60, 100, 180];
 const EXTRA_CURSOR_BG: RGB = [200, 200, 200];
@@ -84,6 +87,28 @@ export function getViewDimensions(
   return { gw, contentTop, viewH, viewW, helpRows };
 }
 
+function titleLayout(w: number, editor: EditorState, plugin: LanguagePlugin | null) {
+  const langName = plugin ? ` [${plugin.name}]` : "";
+  const title = ` jano — ${editor.filePath || "untitled"}${langName} `;
+  return { title, x: Math.floor((w - title.length) / 2) };
+}
+
+/**
+ * Draws the current frame of the title animation and writes only the title row.
+ * The terminal cursor stays untouched, so the editor cursor doesn't flicker.
+ */
+export function renderTitleReveal(
+  screen: Screen,
+  draw: Draw,
+  editor: EditorState,
+  plugin: LanguagePlugin | null,
+  reveal: RevealState,
+) {
+  const { x } = titleLayout(screen.width, editor, plugin);
+  drawReveal(draw, x + 1, 0, reveal);
+  draw.flushRows([0]);
+}
+
 export function render(
   screen: Screen,
   draw: Draw,
@@ -93,6 +118,7 @@ export function render(
   pluginVersion?: string,
   diagnostics?: Diagnostic[],
   gitInfo?: GitInfo | null,
+  titleReveal?: RevealState | null,
 ) {
   draw.clear();
 
@@ -120,10 +146,10 @@ export function render(
     draw.char(x, 0, "─", { fg: [55, 60, 70] });
   }
   // title
-  const langName = plugin ? ` [${plugin.name}]` : "";
-  const title = ` jano — ${editor.filePath || "untitled"}${langName} `;
-  const titleX = Math.floor((w - title.length) / 2);
-  draw.text(titleX, 0, title, { fg: [230, 200, 100] });
+  const { title, x: titleX } = titleLayout(w, editor, plugin);
+  draw.text(titleX, 0, title, { fg: TITLE_FG });
+  // startup animation writes "jano —" over the same cells, so the title never shifts
+  if (titleReveal) drawReveal(draw, titleX + 1, 0, titleReveal);
 
   // DEBUG badge (left side of title bar) when running in debug mode
   if (process.env.JANO_DEBUG === "1") {

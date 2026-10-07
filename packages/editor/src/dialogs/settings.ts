@@ -11,7 +11,11 @@ import { getEditorSettings, updateEditorSetting, resetEditorSettings } from "../
 
 type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
-  | { kind: "toggle"; key: "insertSpaces" | "lineNumbers" | "autoComplete"; label: string }
+  | {
+      kind: "toggle";
+      key: "insertSpaces" | "lineNumbers" | "autoComplete" | "startupAnimation";
+      label: string;
+    }
   | { kind: "action"; action: "reset"; label: string };
 
 const editorSettingRows: EditorSettingRow[] = [
@@ -19,6 +23,7 @@ const editorSettingRows: EditorSettingRow[] = [
   { kind: "toggle", key: "insertSpaces", label: "Insert Spaces" },
   { kind: "toggle", key: "lineNumbers", label: "Line Numbers" },
   { kind: "toggle", key: "autoComplete", label: "Auto Complete" },
+  { kind: "toggle", key: "startupAnimation", label: "Startup Animation" },
   { kind: "action", action: "reset", label: "Reset to defaults" },
 ];
 

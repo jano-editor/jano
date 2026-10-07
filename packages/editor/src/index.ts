@@ -11,6 +11,10 @@ import {
   alertHandleKey,
   alertHandleClick,
   closeAlert,
+  createReveal,
+  isRevealDone,
+  revealFrame,
+  type RevealState,
   type KeyEvent,
   type MouseEvent,
   type AlertState,
@@ -22,7 +26,15 @@ import { createEditor } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
-import { render, getViewDimensions, gutterWidth, positionCursor } from "./render.ts";
+import {
+  render,
+  getViewDimensions,
+  gutterWidth,
+  positionCursor,
+  renderTitleReveal,
+  TITLE_FG,
+  JANO_PINK,
+} from "./render.ts";
 import {
   createCompletionState,
   closeCompletion,
@@ -83,6 +95,7 @@ const session: Session = {
 
 let activeAlert: AlertState | null = null;
 let recoveryAlert: AlertState | null = null;
+let titleReveal: RevealState | null = null;
 
 function renderView() {
   render(
@@ -94,6 +107,7 @@ function renderView() {
     session.pluginVersion,
     session.validator.state.diagnostics,
     gitInfo,
+    titleReveal,
   );
   renderCompletionPopup();
   for (const alert of [activeAlert, recoveryAlert]) {
@@ -173,6 +187,37 @@ function refreshGitInfo() {
     gitInfo = info;
     update();
   });
+}
+
+// ----- Startup animation -----
+
+// "jano" is typed into the title out of a pink block cursor. Purely visual: it runs
+// on its own timer, redraws only the title row and never blocks input.
+function playStartupAnimation() {
+  if (!getEditorSettings().startupAnimation) return;
+  const reveal = createReveal({
+    text: "jano",
+    enterColor: JANO_PINK,
+    finalColor: TITLE_FG,
+    stepMs: 130, // slow enough to see the uppercase letter arrive
+    blinkMs: 250,
+    blinks: 1,
+  });
+  titleReveal = reveal;
+  log.debug({ action: "startup_animation_start" });
+
+  let lastFrame = -1;
+  const timer = setInterval(() => {
+    const frame = revealFrame(reveal);
+    if (frame === lastFrame) return;
+    lastFrame = frame;
+    renderTitleReveal(screen, draw, editor, session.plugin, reveal);
+    if (isRevealDone(reveal)) {
+      clearInterval(timer);
+      titleReveal = null;
+      log.debug({ action: "startup_animation_done" });
+    }
+  }, 20);
 }
 
 // ----- Recovery -----
@@ -641,6 +686,7 @@ async function start() {
   process.stdin.setRawMode(true);
   input.start();
   refreshRecoveryBanner();
+  playStartupAnimation();
   update();
 
   // async git info, renders when ready (already triggered by reloadPlugin for files)

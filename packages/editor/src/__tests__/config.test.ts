@@ -38,6 +38,7 @@ describe("config: editor settings", () => {
       insertSpaces: true,
       lineNumbers: true,
       autoComplete: true,
+      startupAnimation: true,
     });
     expect(loaded.plugins).toEqual({});
   });
@@ -55,7 +56,13 @@ describe("config: editor settings", () => {
     writeFileSync(
       configPath,
       JSON.stringify({
-        editor: { tabSize: 8, insertSpaces: false, lineNumbers: false, autoComplete: false },
+        editor: {
+          tabSize: 8,
+          insertSpaces: false,
+          lineNumbers: false,
+          autoComplete: false,
+          startupAnimation: false,
+        },
       }),
     );
     const loaded = loadConfig();
@@ -64,6 +71,7 @@ describe("config: editor settings", () => {
       insertSpaces: false,
       lineNumbers: false,
       autoComplete: false,
+      startupAnimation: false,
     });
   });
 
@@ -75,13 +83,20 @@ describe("config: editor settings", () => {
       insertSpaces: true,
       lineNumbers: true,
       autoComplete: true,
+      startupAnimation: true,
     });
   });
 
   it("saveConfig persists editor settings to disk", () => {
     saveConfig({
       plugins: {},
-      editor: { tabSize: 4, insertSpaces: false, lineNumbers: true, autoComplete: true },
+      editor: {
+        tabSize: 4,
+        insertSpaces: false,
+        lineNumbers: true,
+        autoComplete: true,
+        startupAnimation: true,
+      },
     });
 
     const reloaded = loadConfig();
@@ -90,6 +105,7 @@ describe("config: editor settings", () => {
       insertSpaces: false,
       lineNumbers: true,
       autoComplete: true,
+      startupAnimation: true,
     });
   });
 
