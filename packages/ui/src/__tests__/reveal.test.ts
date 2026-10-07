@@ -45,6 +45,11 @@ describe("reveal", () => {
     ]);
   });
 
+  it("keeps graphemes whose uppercase form is wider (ß -> SS)", () => {
+    expect(frame("aßb", 2)).toBe("aß█");
+    expect(frame("aßb", 3)).toBe("aßB█");
+  });
+
   it("uses the enter color for the entering grapheme only", () => {
     let out = "";
     const screen = { width: 10, height: 1, write: (d: string) => (out += d) } as unknown as Screen;

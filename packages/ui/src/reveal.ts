@@ -1,6 +1,6 @@
 import type { Draw } from "./draw.ts";
 import type { RGB } from "./color.ts";
-import { graphemes, graphemeWidth } from "./width.ts";
+import { graphemes, graphemeWidth, stringWidth } from "./width.ts";
 
 // Typewriter style reveal: a block cursor writes the text one grapheme at a time.
 // Each grapheme enters in `enterColor` (uppercased by default) and settles into
@@ -100,7 +100,9 @@ export function drawReveal(draw: Draw, x: number, y: number, state: RevealState,
     const w = graphemeWidth(g);
     if (i < shown) {
       const isEntering = i === entering;
-      const text = isEntering && opts.uppercaseOnEnter ? g.toUpperCase() : g;
+      // "ß" uppercases to "SS", so only use the uppercase form if it keeps the width
+      const upper = isEntering && opts.uppercaseOnEnter ? g.toUpperCase() : g;
+      const text = stringWidth(upper) === w ? upper : g;
       draw.text(col, y, text, { fg: isEntering ? opts.enterColor : opts.finalColor, bg: opts.bg });
     } else {
       draw.text(col, y, " ".repeat(w), { bg: opts.bg });
