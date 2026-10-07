@@ -126,8 +126,14 @@ function swapIn(staging: string, pluginDir: string) {
   if (backup) rmSync(backup, { recursive: true, force: true });
 }
 
+/**
+ * Installs a plugin from the registry. Progress goes to `report`, which prints to the
+ * console by default. Inside the editor pass a callback instead, console output would
+ * break the screen.
+ */
 export async function installPlugin(
   nameWithVersion: string,
+  report: (message: string) => void = (message) => console.log(`[jano] ${message}`),
 ): Promise<{ success: boolean; name: string; version: string; error?: string }> {
   const [name, requestedVersion] = nameWithVersion.split("@") as [string, string | undefined];
 
@@ -136,7 +142,7 @@ export async function installPlugin(
     const pluginDir = getPluginDir(name);
 
     // fetch plugin info
-    console.log(`[jano] Fetching plugin info for '${name}'...`);
+    report(`Fetching plugin info for '${name}'...`);
     const detail = await fetchPluginDetail(name);
 
     const version = requestedVersion || detail.latestVersion;
@@ -168,16 +174,16 @@ export async function installPlugin(
         return { success: true, name, version, error: `Already installed at v${version}.` };
       }
       const direction = compareVersions(installedVersion, version) < 0 ? "upgrade" : "downgrade";
-      console.log(`[jano] ${name}: ${direction} from v${installedVersion} to v${version}`);
+      report(`${name}: ${direction} from v${installedVersion} to v${version}`);
     }
 
-    console.log(`[jano] Downloading ${name} v${version}...`);
+    report(`Downloading ${name} v${version}...`);
     const zipBuffer = await downloadPlugin(name, requestedVersion);
 
-    console.log(`[jano] Installing to ${pluginDir}...`);
+    report(`Installing to ${pluginDir}...`);
     swapIn(stagePlugin(zipBuffer, name), pluginDir);
 
-    console.log(`[jano] ✓ Installed ${name} v${version}`);
+    report(`✓ Installed ${name} v${version}`);
     return { success: true, name, version };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -46,6 +46,9 @@ import { buildContext } from "./plugins/context.ts";
 import { callPluginHookAsync } from "./plugins/call.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths, getBackupsDir } from "./plugins/config.ts";
+import { fetchPluginList, type RegistryPlugin } from "./plugins/registry.ts";
+import { pickRecommendations } from "./plugins/recommendations.ts";
+import { showPluginWelcome } from "./dialogs/welcome.ts";
 import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
@@ -99,6 +102,8 @@ let activeAlert: AlertState | null = null;
 let recoveryAlert: AlertState | null = null;
 let titleReveal: RevealState | null = null;
 let pluginErrors: string[] = [];
+// set on the first key press, so the plugin welcome never pops up mid typing
+let userTyped = false;
 
 function renderView() {
   render(
@@ -119,9 +124,12 @@ function renderView() {
       draw.flush();
     }
   }
+  // open dialogs paint on top, so timers, banners and async results can redraw the
+  // screen at any time without hiding them. a dialog also owns the terminal cursor.
+  const dialogOpen = input.renderLayers();
   // must be the LAST step of the render cycle: every preceding flush can move
   // the terminal cursor to the last written cell, which would hide the blink.
-  positionCursor(screen, editor, cm, session.plugin);
+  if (!dialogOpen) positionCursor(screen, editor, cm, session.plugin);
 }
 
 const KIND_ICONS: Record<string, string> = {
@@ -227,6 +235,38 @@ function showPluginErrors() {
       update();
     },
   );
+}
+
+// ----- Plugin recommendations -----
+
+/** Offers missing registry plugins on startup. Skipped offline, mid typing or over a dialog. */
+async function offerPlugins() {
+  if (!getEditorSettings().pluginRecommendations) return;
+  let available: RegistryPlugin[];
+  try {
+    available = await fetchPluginList();
+  } catch (err) {
+    log.info({ action: "plugin_welcome_skipped", reason: "offline", error: String(err) });
+    return;
+  }
+  const missing = pickRecommendations(available);
+  const busy = userTyped || input.topLayerName() !== "editor";
+  if (missing.length === 0 || busy) {
+    log.info({
+      action: "plugin_welcome_skipped",
+      reason: missing.length === 0 ? "nothing_new" : "busy",
+    });
+    return;
+  }
+  await showPluginWelcome(session, missing, reloadAllPlugins);
+}
+
+/** Loads freshly installed plugins without a restart, the open file picks up its plugin. */
+async function reloadAllPlugins() {
+  const result = await initPlugins();
+  log.info({ action: "plugins_reloaded", count: result.plugins.length });
+  reloadPlugin();
+  update();
 }
 
 // ----- Startup animation -----
@@ -513,6 +553,7 @@ editorLayer.on("shortcut", (event) => {
 });
 
 editorLayer.on("key", (key) => {
+  userTyped = true;
   // alert intercepts ESC; onClose callback clears activeAlert and re-renders
   if (activeAlert && alertHandleKey(activeAlert, key.raw)) {
     return true;
@@ -751,6 +792,7 @@ async function start() {
   input.start();
   refreshRecoveryBanner();
   showPluginErrors();
+  void offerPlugins();
   playStartupAnimation();
   update();
 

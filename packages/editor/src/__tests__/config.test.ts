@@ -39,6 +39,7 @@ describe("config: editor settings", () => {
       lineNumbers: true,
       autoComplete: true,
       startupAnimation: true,
+      pluginRecommendations: true,
     });
     expect(loaded.plugins).toEqual({});
   });
@@ -62,6 +63,7 @@ describe("config: editor settings", () => {
           lineNumbers: false,
           autoComplete: false,
           startupAnimation: false,
+          pluginRecommendations: false,
         },
       }),
     );
@@ -72,6 +74,7 @@ describe("config: editor settings", () => {
       lineNumbers: false,
       autoComplete: false,
       startupAnimation: false,
+      pluginRecommendations: false,
     });
   });
 
@@ -84,6 +87,7 @@ describe("config: editor settings", () => {
       lineNumbers: true,
       autoComplete: true,
       startupAnimation: true,
+      pluginRecommendations: true,
     });
   });
 
@@ -96,6 +100,7 @@ describe("config: editor settings", () => {
         lineNumbers: true,
         autoComplete: true,
         startupAnimation: true,
+        pluginRecommendations: true,
       },
     });
 
@@ -106,6 +111,7 @@ describe("config: editor settings", () => {
       lineNumbers: true,
       autoComplete: true,
       startupAnimation: true,
+      pluginRecommendations: true,
     });
   });
 

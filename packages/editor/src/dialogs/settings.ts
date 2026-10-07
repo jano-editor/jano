@@ -13,7 +13,12 @@ type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
   | {
       kind: "toggle";
-      key: "insertSpaces" | "lineNumbers" | "autoComplete" | "startupAnimation";
+      key:
+        | "insertSpaces"
+        | "lineNumbers"
+        | "autoComplete"
+        | "startupAnimation"
+        | "pluginRecommendations";
       label: string;
     }
   | { kind: "action"; action: "reset"; label: string };
@@ -24,6 +29,7 @@ const editorSettingRows: EditorSettingRow[] = [
   { kind: "toggle", key: "lineNumbers", label: "Line Numbers" },
   { kind: "toggle", key: "autoComplete", label: "Auto Complete" },
   { kind: "toggle", key: "startupAnimation", label: "Startup Animation" },
+  { kind: "toggle", key: "pluginRecommendations", label: "Plugin Recommendations" },
   { kind: "action", action: "reset", label: "Reset to defaults" },
 ];
 
@@ -47,8 +53,9 @@ export function showSettings(s: Session): Promise<void> {
 
     function renderSettings() {
       if (!backgroundDrawn) {
-        s.update();
+        // set first: the background render paints open layers, including this dialog
         backgroundDrawn = true;
+        s.update();
       }
 
       const x = Math.floor((s.screen.width - dialogW) / 2);
@@ -175,7 +182,7 @@ export function showSettings(s: Session): Promise<void> {
       }
     }
 
-    const layer = s.input.pushLayer("settings");
+    const layer = s.input.pushLayer("settings", renderSettings);
 
     layer.on("key", (key) => {
       if (key.raw.length === 1 && key.raw[0] === 0x1b) {

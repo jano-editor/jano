@@ -42,8 +42,9 @@ export function showDiagnostics(s: Session): Promise<void> {
 
     function renderDiag() {
       if (!backgroundDrawn) {
-        s.update();
+        // set first: the background render paints open layers, including this dialog
         backgroundDrawn = true;
+        s.update();
       }
 
       const totalH = 3 + listH + 1;
@@ -96,7 +97,7 @@ export function showDiagnostics(s: Session): Promise<void> {
       s.draw.flush();
     }
 
-    const layer = s.input.pushLayer("diagnostics");
+    const layer = s.input.pushLayer("diagnostics", renderDiag);
 
     layer.on("key", (key) => {
       if (key.raw.length === 1 && key.raw[0] === 0x1b) {

@@ -69,8 +69,9 @@ export function showDialog(
 
     function renderDialog() {
       if (!backgroundDrawn) {
-        renderBackground();
+        // set first: the background render paints open layers, including this dialog
         backgroundDrawn = true;
+        renderBackground();
       }
 
       const w = dialogW;
@@ -148,7 +149,8 @@ export function showDialog(
       resolve(result);
     }
 
-    layer = inputMgr.pushLayer("dialog");
+    // with a render function the dialog stays on top when something redraws the screen
+    layer = inputMgr.pushLayer("dialog", renderDialog);
 
     layer.on("key", (key: KeyEvent) => {
       // escape = cancel

@@ -8,6 +8,8 @@ export interface EditorSettings {
   lineNumbers: boolean;
   autoComplete: boolean;
   startupAnimation: boolean;
+  /** offer recommended plugins on startup while some are missing */
+  pluginRecommendations: boolean;
 }
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
@@ -16,6 +18,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   lineNumbers: true,
   autoComplete: true,
   startupAnimation: true,
+  pluginRecommendations: true,
 };
 
 export interface JanoConfig {
