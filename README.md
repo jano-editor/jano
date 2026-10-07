@@ -25,6 +25,12 @@
 curl -fsSL https://janoeditor.dev/install.sh | bash
 ```
 
+**Homebrew**
+
+```bash
+brew tap jano-editor/jano && brew install jano
+```
+
 **Windows (PowerShell)**
 
 ```powershell
@@ -40,7 +46,7 @@ npm install -g @jano-editor/editor
 ## Features
 
 - **Familiar shortcuts** - Ctrl+S, Ctrl+Z, Ctrl+C/V, Ctrl+A - no learning curve
-- **Syntax highlighting** - via plugins for YAML, JSON, Markdown, Shell, Dockerfile and more
+- **Syntax highlighting** - via plugins for JavaScript/TypeScript, Python, TOML, YAML, JSON, Markdown, Shell, Dockerfile and more
 - **Auto-formatting** - press F3 to format the entire document
 - **Autocomplete** - plugin-driven completions plus buffer words, works with multi-cursor
 - **Inline validation** - errors and warnings shown directly in the editor (F4 for details)
@@ -53,7 +59,7 @@ npm install -g @jano-editor/editor
 - **Settings dialog** - F9 for tab size, line numbers, autocomplete and the startup animation
 - **Structured debug logs** - `--debug` writes JSON events to `~/.cache/jano/logs/` for easy bug diagnosis
 - **Plugin system** - install plugins from the [Plugin Store](https://janoeditor.dev/plugins). On first start a welcome dialog offers the recommended plugins and installs them without a restart (turn it off in F9)
-- **60,000+ lines** - no lag, ~59KB JS bundle, starts instantly
+- **60,000+ lines** - no lag, starts instantly. One standalone binary, or about 85 KB of gzipped JavaScript
 - **Cross-platform** - Linux, macOS, Windows, WSL
 
 ## Usage
@@ -102,6 +108,9 @@ jano update
 Plugins add syntax highlighting, formatting, validation and more for any file format.
 
 ```bash
+jano plugin install javascript
+jano plugin install python
+jano plugin install toml
 jano plugin install yaml
 jano plugin install json
 jano plugin install markdown
@@ -113,7 +122,7 @@ Browse all available plugins at [janoeditor.dev/plugins](https://janoeditor.dev/
 
 ### Build your own
 
-A plugin is a single TypeScript file. See the [docs](https://janoeditor.dev/docs) or check out [plugin-yaml](https://github.com/jano-editor/plugin-yaml) as a reference.
+A plugin is a single TypeScript file. Since plugin API v2, hooks like `onFormat`, `onValidate` and `onComplete` may return a Promise, so slow work never blocks typing. See the [plugin guide](https://janoeditor.dev/docs/plugins) or check out [plugin-python](https://github.com/jano-editor/plugin-python) as a reference.
 
 ## Packages
 
@@ -127,7 +136,7 @@ This is a monorepo with the following packages:
 
 ## 100% JavaScript
 
-jano is built entirely in JavaScript/TypeScript on Node.js. No native binaries, no compilation. If you can read JS, you can understand and extend jano.
+jano is built entirely in JavaScript/TypeScript. No native addons, the standalone binary is the same code bundled with the Bun runtime. If you can read JS, you can understand and extend jano.
 
 ## License
 

@@ -15,17 +15,17 @@
 - `packages/editor` - The editor itself
 - `packages/plugin-types` - Shared plugin interface (@jano-editor/plugin-types)
 
-Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugin-json, plugin-markdown, plugin-shell, plugin-dockerfile.
+Plugins live in separate repos (`~/projects/jano-plugins/`): plugin-javascript, plugin-python, plugin-toml, plugin-yaml, plugin-json, plugin-markdown, plugin-shell, plugin-dockerfile.
 
 ## Commands
 
 - `pnpm dev <file>` - Run in dev via cli.ts (adds `-- --debug` to enable debug logs)
 - `JANO_DEBUG=1 pnpm dev <file>` - Run with debug logs (alternative to `-- --debug`)
-- `vp build` - Production build (~59KB ESM output)
+- `vp build` - Production build (ESM, about 85 KB gzipped)
 - `vp check` - Lint + format + typecheck
 - `bun test` - Run unit tests (uses `bun:test`)
 
-## TODO v0.1
+## TODO
 
 ### Critical (must have)
 
@@ -73,7 +73,7 @@ Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugi
 - [x] Scrollbar (vertical + horizontal)
 - [x] Terminal resize handling
 - [x] 60k+ lines performance
-- [x] Vite+ build (~59KB)
+- [x] Vite+ build
 - [x] F1 Help dialog, F9 Settings dialog
 - [x] Autocomplete popup with plugin + buffer-word completions
 - [x] Inline diagnostics (F4) + validator with debounce
@@ -92,9 +92,9 @@ Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugi
 ### Build
 
 - Vite + Rollup, target Node 22 (ES2022), ESM only
-- Output: single `cli.js` ES module
+- Output: `cli.js` plus chunks (logger, ui), ES modules
 - Externals in vite.config.ts: `adm-zip`, `clipboardy`, all `node:*` modules
-- Final binary: ~59KB
+- Bundle size: about 314 KB raw, 85 KB gzipped
 
 ### Plugin System (critical architecture)
 
@@ -213,9 +213,9 @@ Whenever a feature ships, user-facing docs MUST be updated in the same change:
 
 - **`README.md`** (repo root) — the longer read. Feature list, full shortcut table, plugin list, install instructions. Can be more verbose, allowed to be reading material.
 - **`packages/editor/README.md`** — **this is the npm page**. Must hit hard with the wow features right at the top (multi-cursor, autocomplete, plugins, zero bloat, 100% JS). No dry checklists — frame it as "Why jano?" with punchy one-liners. But must not miss any user-facing capability.
-- **`~/projects/janoeditor.dev/app/pages/index.vue`** — landing page feature cards, video showcases, stats bar
-- **`~/projects/janoeditor.dev/app/pages/docs.vue`** — plugin interface hooks, code examples, tips
-- **`~/projects/janoeditor.dev/i18n/locales/{en,de}.json`** — all translated strings for the above pages
+- **`~/projects/janoeditor.dev/app/pages/index.vue`** — landing page: shortcut list, roadmap, stats line. The hero demo scenes are in `app/utils/scenes.ts` (replayed jano sessions, no videos)
+- **`~/projects/janoeditor.dev/content/{en,de}/docs/*.md`** — the docs (Nuxt Content): getting started, shortcuts, settings, CLI, writing plugins (every hook), troubleshooting
+- **`~/projects/janoeditor.dev/i18n/locales/{en,de}.json`** — all translated strings of the site (landing, store, search)
 - **This `CLAUDE.md`** — if architecture, packages, commands, or conventions changed
 
 Rule: if someone lands on janoeditor.dev or npmjs.com five minutes after a release, they should see the new feature. Stale docs are treated as a release bug.

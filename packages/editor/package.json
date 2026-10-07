@@ -2,6 +2,23 @@
   "name": "@jano-editor/editor",
   "version": "1.0.0-alpha.18",
   "description": "A modern terminal editor with plugin support",
+  "keywords": [
+    "cli",
+    "editor",
+    "multi-cursor",
+    "nano",
+    "terminal",
+    "tui"
+  ],
+  "homepage": "https://janoeditor.dev",
+  "bugs": "https://github.com/jano-editor/jano/issues",
+  "license": "MIT",
+  "author": "Florian Heuberger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jano-editor/jano.git",
+    "directory": "packages/editor"
+  },
   "bin": {
     "jano": "dist/cli.js"
   },

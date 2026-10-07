@@ -2,6 +2,22 @@
   "name": "@jano-editor/ui",
   "version": "1.0.0-alpha.8",
   "description": "Terminal UI library for jano editor",
+  "keywords": [
+    "ansi",
+    "jano",
+    "terminal",
+    "tui",
+    "ui"
+  ],
+  "homepage": "https://janoeditor.dev",
+  "bugs": "https://github.com/jano-editor/jano/issues",
+  "license": "MIT",
+  "author": "Florian Heuberger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jano-editor/jano.git",
+    "directory": "packages/ui"
+  },
   "files": [
     "dist"
   ],

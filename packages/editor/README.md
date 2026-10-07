@@ -18,8 +18,8 @@ Website: [janoeditor.dev](https://janoeditor.dev) · Repo: [jano-editor/jano](ht
 - **Never lose work** - unsaved changes are backed up in the background. After a crash, jano offers to restore them.
 - **Auto-formatting** — F3 runs the active plugin's formatter on the whole document.
 - **Plugin store** — `jano plugin install yaml`, browse at [janoeditor.dev/plugins](https://janoeditor.dev/plugins). On first start jano offers the recommended plugins and installs them in one go.
-- **Zero bloat** — ~59KB JS bundle, starts instantly, smooth scrolling at 60,000+ lines.
-- **100% JavaScript** — no native addons, no compile steps. If you can read JS, you can extend jano.
+- **Zero bloat** — one standalone binary, or about 85 KB of gzipped JavaScript. Starts instantly, smooth scrolling at 60,000+ lines.
+- **100% JavaScript** — no native addons. If you can read JS, you can extend jano.
 
 ## Install
 
@@ -27,6 +27,12 @@ Website: [janoeditor.dev](https://janoeditor.dev) · Repo: [jano-editor/jano](ht
 
 ```bash
 curl -fsSL https://janoeditor.dev/install.sh | bash
+```
+
+**Homebrew**
+
+```bash
+brew tap jano-editor/jano && brew install jano
 ```
 
 **Windows (PowerShell)**
@@ -78,9 +84,11 @@ Press F1 inside the editor for the full list.
 
 Plugins add syntax highlighting, formatting, validation, and completions for any file format. A plugin is a single TypeScript file — if you can write a regex, you can build one.
 
-Ready-made plugins: **YAML, JSON, Markdown, Shell, Dockerfile**.
+Ready-made plugins: **JavaScript/TypeScript, Python, TOML, YAML, JSON, Markdown, Shell, Dockerfile**.
 
-Build your own: see the [docs](https://janoeditor.dev/docs) or check out [plugin-yaml](https://github.com/jano-editor/plugin-yaml) as a reference.
+Plugin API v2 lets hooks return a Promise, so a plugin can run a formatter or linter without ever blocking your typing. Plugins written for API v1 keep working.
+
+Build your own: see the [plugin guide](https://janoeditor.dev/docs/plugins) or check out [plugin-yaml](https://github.com/jano-editor/plugin-yaml) as a reference.
 
 ## License
 

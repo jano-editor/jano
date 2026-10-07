@@ -1,6 +1,22 @@
 {
   "name": "@jano-editor/plugin-types",
   "version": "1.0.0-alpha.4",
+  "description": "Types for writing jano editor plugins",
+  "keywords": [
+    "editor",
+    "jano",
+    "plugin",
+    "types"
+  ],
+  "homepage": "https://janoeditor.dev",
+  "bugs": "https://github.com/jano-editor/jano/issues",
+  "license": "MIT",
+  "author": "Florian Heuberger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jano-editor/jano.git",
+    "directory": "packages/plugin-types"
+  },
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts"
