@@ -51,6 +51,12 @@ describe("stagePlugin", () => {
     expect(leftovers()).toEqual([]);
   });
 
+  it("rejects an archive that contains a different plugin", () => {
+    const zip = zipOf({ "plugin.json": manifest({ name: "other" }), "index.js": "" });
+    expect(() => stagePlugin(zip, "demo")).toThrow("expected 'demo'");
+    expect(leftovers()).toEqual([]);
+  });
+
   it("rejects a missing entry file", () => {
     expect(() => stagePlugin(zipOf({ "plugin.json": manifest() }), "demo")).toThrow("index.js");
   });

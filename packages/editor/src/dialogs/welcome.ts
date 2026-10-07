@@ -154,27 +154,44 @@ export function showPluginWelcome(
 
     async function install() {
       phase = "install";
-      // the user decided on every offered plugin, deselected ones won't be offered again
-      markSeen(rows.map((r) => r.plugin.name));
+      try {
+        // the user decided on every offered plugin, deselected ones won't be offered again
+        markSeen(rows.map((r) => r.plugin.name));
+      } catch (err) {
+        // only means the dialog may show up again, never a reason to stop installing
+        log.warn({ action: "plugin_welcome_mark_seen_failed", error: String(err) });
+      }
       const picked = rows.filter((r) => r.checked);
       log.info({ action: "plugin_welcome_install", plugins: picked.map((r) => r.plugin.name) });
-      for (const row of picked) {
-        row.status = "busy";
-        render();
-        // no console output inside the editor, it would break the screen
-        const result = await installPlugin(row.plugin.name, () => {});
-        row.status = result.success ? "ok" : "failed";
-        row.error = result.error;
-        log.info({
-          action: result.success ? "plugin_welcome_installed" : "plugin_welcome_install_failed",
-          plugin: row.plugin.name,
-          error: result.success ? undefined : result.error,
-        });
+      try {
+        for (const row of picked) {
+          row.status = "busy";
+          render();
+          // no console output inside the editor, it would break the screen
+          const result = await installPlugin(row.plugin.name, () => {});
+          row.status = result.success ? "ok" : "failed";
+          row.error = result.error;
+          log.info({
+            action: result.success ? "plugin_welcome_installed" : "plugin_welcome_install_failed",
+            plugin: row.plugin.name,
+            error: result.success ? undefined : result.error,
+          });
+          render();
+        }
+        if (picked.some((r) => r.status === "ok")) await onInstalled();
+      } catch (err) {
+        log.error({ action: "plugin_welcome_install_crashed", error: String(err) });
+        for (const row of picked) {
+          if (row.status === "busy" || row.status === "pending") {
+            row.status = "failed";
+            row.error = "Installation stopped unexpectedly";
+          }
+        }
+      } finally {
+        // whatever happened, the dialog must stay closable
+        phase = "done";
         render();
       }
-      if (picked.some((r) => r.status === "ok")) await onInstalled();
-      phase = "done";
-      render();
     }
 
     const layer = s.input.pushLayer("welcome", render);

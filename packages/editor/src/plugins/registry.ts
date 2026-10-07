@@ -95,6 +95,10 @@ export function stagePlugin(zipBuffer: Buffer, name: string): string {
     if (!existsSync(manifestPath)) throw new Error("Archive has no plugin.json");
     const manifest = validateManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
     if (!manifest) throw new Error("plugin.json is missing required fields");
+    // otherwise it would sit in plugins/<name> but load as something else
+    if (manifest.name !== name) {
+      throw new Error(`Archive contains plugin '${manifest.name}', expected '${name}'`);
+    }
     if (manifest.api > CURRENT_API_VERSION) {
       throw new Error(
         `${name} needs plugin API v${manifest.api}, this jano supports v${CURRENT_API_VERSION}. Run 'jano update' first.`,

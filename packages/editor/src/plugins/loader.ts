@@ -87,12 +87,14 @@ export interface LoadResult {
   plugins: LoadedPlugin[];
   errors: PluginError[];
   conflicts: string[];
+  /** dirs of enabled plugins skipped because another plugin claimed their extension */
+  conflictDirs: string[];
 }
 
 export async function loadPlugins(): Promise<LoadResult> {
   const pluginsDir = getPluginsDir();
   const config = loadConfig();
-  const result: LoadResult = { plugins: [], errors: [], conflicts: [] };
+  const result: LoadResult = { plugins: [], errors: [], conflicts: [], conflictDirs: [] };
 
   if (!existsSync(pluginsDir)) return result;
 
@@ -189,7 +191,10 @@ export async function loadPlugins(): Promise<LoadResult> {
         break;
       }
     }
-    if (hasConflict) continue;
+    if (hasConflict) {
+      result.conflictDirs.push(dir);
+      continue;
+    }
 
     // load the plugin
     const entryPath = join(dir, manifest.entry);

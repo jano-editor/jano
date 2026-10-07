@@ -480,7 +480,9 @@ function dispatch(key: KeyEvent) {
         (!key.ctrl && !key.alt && key.name.length === 1) ||
         key.name === "backspace" ||
         key.name === "tab";
+      // anything else (arrows, home, ...) moved the cursor: a pending completion is stale
       if (isTyping) scheduleAutoComplete();
+      else cancelAutoComplete();
     }
   }
 }

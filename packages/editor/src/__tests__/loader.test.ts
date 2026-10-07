@@ -49,6 +49,16 @@ describe("loadPlugins errors", async () => {
     "index.js": 'export default { name: "lt-ok", extensions: [".lt-ok"] }',
   });
 
+  // two plugins claiming the same extension, the second one is skipped
+  plugin("lt-claim-a", {
+    "plugin.json": manifest("lt-claim-a", { extensions: [".lt-shared"] }),
+    "index.js": 'export default { name: "a", extensions: [".lt-shared"] }',
+  });
+  plugin("lt-claim-b", {
+    "plugin.json": manifest("lt-claim-b", { extensions: [".lt-shared"] }),
+    "index.js": 'export default { name: "b", extensions: [".lt-shared"] }',
+  });
+
   const result = await loadPlugins();
   const err = (name: string) => result.errors.find((e) => e.name === name);
 
@@ -81,6 +91,12 @@ describe("loadPlugins errors", async () => {
 
   it("recognizes syntax errors", () => {
     expect(err("lt-syntax")!.why).toContain("syntax error");
+  });
+
+  it("reports plugins skipped because of an extension conflict", () => {
+    const skipped = result.conflictDirs.filter((d) => d.includes("lt-claim-"));
+    expect(skipped).toHaveLength(1);
+    expect(result.conflicts.some((c) => c.includes(".lt-shared"))).toBe(true);
   });
 
   it("still loads healthy plugins next to broken ones", () => {

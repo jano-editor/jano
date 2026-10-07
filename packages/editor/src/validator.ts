@@ -1,7 +1,9 @@
 import type { Diagnostic, LanguagePlugin } from "./plugins/types.ts";
 import { log } from "./utils/logger.ts";
+import { callPluginHookAsync } from "./plugins/call.ts";
 
 const DEBOUNCE_MS = 500;
+const VALIDATE_TIMEOUT_MS = 10_000;
 
 export interface ValidatorState {
   diagnostics: Diagnostic[];
@@ -46,32 +48,23 @@ export function createValidator(plugin: LanguagePlugin | null, onDone?: () => vo
       const run = ++runId;
       timer = setTimeout(() => {
         const start = Date.now();
-        void Promise.resolve()
-          .then(() => plugin.onValidate!(snapshot))
-          .then(
-            (result) => {
-              if (run !== runId) return; // superseded by a newer edit
-              state.diagnostics = Array.isArray(result) ? result : [];
-              log.debug({
-                action: "validator_run_done",
-                plugin: plugin.name,
-                diagnosticCount: state.diagnostics.length,
-                durationMs: Date.now() - start,
-              });
-              onDone?.();
-            },
-            (err) => {
-              if (run !== runId) return;
-              state.diagnostics = [];
-              log.error({
-                action: "validator_run_failed",
-                plugin: plugin.name,
-                error: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined,
-              });
-              onDone?.();
-            },
-          );
+        // crashes, rejections and timeouts are logged by the wrapper and come back as null
+        void callPluginHookAsync(
+          plugin,
+          "onValidate",
+          () => plugin.onValidate!(snapshot),
+          VALIDATE_TIMEOUT_MS,
+        ).then((result) => {
+          if (run !== runId) return; // superseded by a newer edit
+          state.diagnostics = Array.isArray(result) ? result : [];
+          log.debug({
+            action: "validator_run_done",
+            plugin: plugin.name,
+            diagnosticCount: state.diagnostics.length,
+            durationMs: Date.now() - start,
+          });
+          onDone?.();
+        });
       }, DEBOUNCE_MS);
     },
 

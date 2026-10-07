@@ -100,6 +100,7 @@ async function handlePluginCommand() {
       const result = await loadPlugins();
       const loaded = new Map(result.plugins.map((p) => [p.dir, p]));
       const failed = new Map(result.errors.map((e) => [e.dir, e]));
+      const conflicted = new Set(result.conflictDirs);
 
       console.log("Installed plugins:\n");
       for (const d of dirs) {
@@ -114,6 +115,8 @@ async function handlePluginCommand() {
           console.log(`      why:  ${err.why}`);
           console.log(`      fix:  ${err.fix}`);
           console.log(`      link: ${err.link}`);
+        } else if (conflicted.has(dir)) {
+          console.log(`  ! ${d.name} (skipped, extension conflict, see below)`);
         } else {
           console.log(`  - ${d.name} (disabled)`);
         }
