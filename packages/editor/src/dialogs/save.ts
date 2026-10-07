@@ -74,6 +74,32 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
     }
   }
 
+  // broken bytes were decoded to U+FFFD on open, writing makes that permanent
+  if (s.editor.invalidUtf8) {
+    const confirm = await showDialog(
+      s.input,
+      s.screen,
+      s.draw,
+      {
+        title: "Invalid UTF-8",
+        message:
+          "This file contains bytes that are not valid UTF-8. Saving replaces them with \uFFFD for good. Save anyway?",
+        buttons: [
+          { label: "Save anyway", value: "save" },
+          { label: "Cancel", value: "cancel" },
+        ],
+        border: "round",
+      },
+      s.update,
+    );
+    if (confirm.type !== "button" || confirm.value !== "save") {
+      log.info({ action: "file_save_cancelled", reason: "invalid_utf8", path: filePath });
+      return false;
+    }
+    // asked once, from now on the buffer is plain UTF-8
+    s.editor.invalidUtf8 = false;
+  }
+
   await runSaveHook(s);
 
   try {

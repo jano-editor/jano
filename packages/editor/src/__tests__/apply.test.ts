@@ -12,6 +12,7 @@ function makeEditor(lines: string[]): EditorState {
     isNewFile: false,
     eol: "\n",
     bom: false,
+    invalidUtf8: false,
   };
 }
 

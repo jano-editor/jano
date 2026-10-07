@@ -22,7 +22,7 @@ import {
 import { checkIfUpdateAvailable } from "./utils/version-check.ts";
 import { initDebugLogger, log, getLogFilePath } from "./utils/logger.ts";
 import { installCrashGuard } from "./utils/crash-guard.ts";
-import { createEditor } from "./editor.ts";
+import { createEditor, OpenError, type EditorState } from "./editor.ts";
 import { createCursorManager } from "./cursor-manager.ts";
 import { createUndoManager } from "./undo.ts";
 import { handleKey, type HandleKeyResult } from "./input.ts";
@@ -73,7 +73,18 @@ const filePath = process.env.JANO_FILE || undefined;
 const screen = createScreen();
 const draw = createDraw(screen);
 const input = createInputManager();
-const editor = createEditor(filePath);
+const editor = openOrExit(filePath);
+
+// runs before the screen switches, so a plain message ends up in the shell
+function openOrExit(path: string | undefined): EditorState {
+  try {
+    return createEditor(path);
+  } catch (err) {
+    if (!(err instanceof OpenError)) throw err;
+    console.error(`[jano] ${err.message}`);
+    process.exit(1);
+  }
+}
 const cm = createCursorManager();
 const undo = createUndoManager();
 const comp = createCompletionState();
@@ -769,6 +780,7 @@ async function start() {
     lineCount: editor.lines.length,
     eol: editor.eol === "\r\n" ? "crlf" : "lf",
     bom: editor.bom,
+    invalidUtf8: editor.invalidUtf8,
   });
 
   if (filePath) {

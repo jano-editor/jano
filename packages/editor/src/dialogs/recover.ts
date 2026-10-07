@@ -68,6 +68,7 @@ function restore(s: Session, entry: BackupEntry) {
   s.editor.dirty = true;
   s.editor.eol = entry.eol === "\r\n" ? "\r\n" : "\n";
   s.editor.bom = entry.bom === true;
+  s.editor.invalidUtf8 = false;
   s.undo.clear();
   s.cm.restoreState({ cursors: [{ x: 0, y: 0, anchor: null }], scrollX: 0, scrollY: 0 });
   s.reloadPlugin();
