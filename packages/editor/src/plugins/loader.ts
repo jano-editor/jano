@@ -1,9 +1,14 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import type { LanguagePlugin } from "./types.ts";
-import { validateManifest, CURRENT_API_VERSION, MIN_API_VERSION } from "./manifest.ts";
+import {
+  validateManifest,
+  manifestProblems,
+  CURRENT_API_VERSION,
+  MIN_API_VERSION,
+} from "./manifest.ts";
 import type { PluginManifest } from "./manifest.ts";
 import { getPluginsDir, loadConfig, isPluginEnabled } from "./config.ts";
 
@@ -19,9 +24,63 @@ export interface LoadedPlugin {
   dir: string;
 }
 
+/** A plugin that could not be loaded, explained for humans (why / fix / link). */
 export interface PluginError {
   dir: string;
+  /** plugin name, or the folder name if plugin.json couldn't be read */
+  name: string;
+  /** one line summary */
   error: string;
+  why: string;
+  fix: string;
+  link: string;
+}
+
+const DOCS_LINK = "https://janoeditor.dev/docs";
+
+function reinstallFix(name: string): string {
+  return `Reinstall it with 'jano plugin install ${name}', or remove it with 'jano plugin remove ${name}'.`;
+}
+
+/** Explains why importing a plugin's entry file failed, with the common bundling mistakes. */
+export function explainImportError(name: string, err: unknown): Omit<PluginError, "dir" | "name"> {
+  const message = err instanceof Error ? err.message : String(err);
+  const error = `${name} failed to load`;
+
+  const dynamicRequire = /Dynamic require of "([^"]+)" is not supported/.exec(message);
+  if (dynamicRequire || /require is not defined/.test(message)) {
+    const mod = dynamicRequire?.[1];
+    return {
+      error,
+      why: `The plugin's bundle calls require(${mod ? `"${mod}"` : ""}), which doesn't exist in ES modules.`,
+      fix: mod
+        ? `Plugin author: rebuild with esbuild --platform=node, or mark "${mod}" as external.`
+        : "Plugin author: rebuild with esbuild --platform=node --format=esm.",
+      link: DOCS_LINK,
+    };
+  }
+
+  const missingModule = /Cannot find (?:module|package) '([^']+)'/.exec(message);
+  if (missingModule) {
+    return {
+      error,
+      why: `The plugin imports "${missingModule[1]}", which isn't bundled with it.`,
+      fix: "Plugin author: bundle all dependencies into the entry file.",
+      link: DOCS_LINK,
+    };
+  }
+
+  // node throws a SyntaxError, bun (and the compiled binary) a BuildMessage
+  if (err instanceof SyntaxError || (err instanceof Error && err.name === "BuildMessage")) {
+    return {
+      error,
+      why: `The plugin's code has a syntax error: ${message}`,
+      fix: `Update the plugin, or report it to its author. ${reinstallFix(name)}`,
+      link: DOCS_LINK,
+    };
+  }
+
+  return { error, why: message, fix: reinstallFix(name), link: DOCS_LINK };
 }
 
 export interface LoadResult {
@@ -55,39 +114,62 @@ export async function loadPlugins(): Promise<LoadResult> {
     const manifestPath = join(dir, "plugin.json");
 
     // check manifest exists
+    const folder = basename(dir);
+    const fail = (name: string, e: Omit<PluginError, "dir" | "name">) =>
+      result.errors.push({ dir, name, ...e });
+
     if (!existsSync(manifestPath)) {
-      result.errors.push({ dir, error: "Missing plugin.json" });
+      fail(folder, {
+        error: `${folder} has no plugin.json`,
+        why: "Every plugin folder needs a plugin.json that describes it.",
+        fix: reinstallFix(folder),
+        link: DOCS_LINK,
+      });
       continue;
     }
 
     // parse manifest
-    let manifest: PluginManifest | null;
+    let data: unknown;
     try {
-      const raw = readFileSync(manifestPath, "utf8");
-      manifest = validateManifest(JSON.parse(raw));
+      data = JSON.parse(readFileSync(manifestPath, "utf8"));
     } catch (err) {
-      result.errors.push({ dir, error: `Invalid plugin.json: ${String(err)}` });
+      fail(folder, {
+        error: `${folder} has a broken plugin.json`,
+        why: `plugin.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        fix: reinstallFix(folder),
+        link: DOCS_LINK,
+      });
       continue;
     }
 
+    const manifest: PluginManifest | null = validateManifest(data);
     if (!manifest) {
-      result.errors.push({ dir, error: "plugin.json missing required fields" });
+      fail(folder, {
+        error: `${folder} has an incomplete plugin.json`,
+        why: manifestProblems(data).join(", "),
+        fix: reinstallFix(folder),
+        link: DOCS_LINK,
+      });
       continue;
     }
 
     // check API compatibility
     if (manifest.api > CURRENT_API_VERSION) {
-      result.errors.push({
-        dir,
-        error: `"${manifest.name}" requires API v${manifest.api}, but jano supports v${CURRENT_API_VERSION}. Update jano to use this plugin.`,
+      fail(manifest.name, {
+        error: `${manifest.name} needs a newer jano`,
+        why: `It uses plugin API v${manifest.api}, this jano supports up to v${CURRENT_API_VERSION}.`,
+        fix: "Run 'jano update'.",
+        link: DOCS_LINK,
       });
       continue;
     }
 
     if (manifest.api < MIN_API_VERSION) {
-      result.errors.push({
-        dir,
-        error: `"${manifest.name}" uses API v${manifest.api}, but jano needs at least v${MIN_API_VERSION}. Update the plugin.`,
+      fail(manifest.name, {
+        error: `${manifest.name} is too old for this jano`,
+        why: `It uses plugin API v${manifest.api}, jano needs at least v${MIN_API_VERSION}.`,
+        fix: `Update it with 'jano plugin install ${manifest.name}'.`,
+        link: DOCS_LINK,
       });
       continue;
     }
@@ -112,7 +194,12 @@ export async function loadPlugins(): Promise<LoadResult> {
     // load the plugin
     const entryPath = join(dir, manifest.entry);
     if (!existsSync(entryPath)) {
-      result.errors.push({ dir, error: `Entry file not found: ${manifest.entry}` });
+      fail(manifest.name, {
+        error: `${manifest.name} is missing its code`,
+        why: `plugin.json points to "${manifest.entry}", but that file doesn't exist.`,
+        fix: reinstallFix(manifest.name),
+        link: DOCS_LINK,
+      });
       continue;
     }
 
@@ -122,7 +209,12 @@ export async function loadPlugins(): Promise<LoadResult> {
       const plugin: LanguagePlugin = mod.default?.default ?? mod.default ?? mod.plugin ?? mod;
 
       if (!plugin.name || !plugin.extensions) {
-        result.errors.push({ dir, error: "Plugin does not export a valid LanguagePlugin" });
+        fail(manifest.name, {
+          error: `${manifest.name} doesn't export a plugin`,
+          why: "The entry file has no default export with a name and extensions.",
+          fix: "Plugin author: export default a LanguagePlugin object.",
+          link: DOCS_LINK,
+        });
         continue;
       }
 
@@ -133,7 +225,7 @@ export async function loadPlugins(): Promise<LoadResult> {
 
       result.plugins.push({ manifest, plugin, dir });
     } catch (err) {
-      result.errors.push({ dir, error: `Failed to load: ${String(err)}` });
+      fail(manifest.name, explainImportError(manifest.name, err));
     }
   }
 

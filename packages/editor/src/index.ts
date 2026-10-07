@@ -96,6 +96,7 @@ const session: Session = {
 let activeAlert: AlertState | null = null;
 let recoveryAlert: AlertState | null = null;
 let titleReveal: RevealState | null = null;
+let pluginErrors: string[] = [];
 
 function renderView() {
   render(
@@ -187,6 +188,27 @@ function refreshGitInfo() {
     gitInfo = info;
     update();
   });
+}
+
+// ----- Plugin load errors -----
+
+// broken plugins used to fail silently, the details live in `jano plugin list`
+function showPluginErrors() {
+  if (pluginErrors.length === 0) return;
+  const what =
+    pluginErrors.length === 1 ? `Plugin ${pluginErrors[0]}` : `${pluginErrors.length} plugins`;
+  activeAlert = createAlert(
+    {
+      type: "error",
+      position: "top",
+      message: `${what} failed to load, see 'jano plugin list'`,
+      autoClose: 10000,
+    },
+    () => {
+      activeAlert = null;
+      update();
+    },
+  );
 }
 
 // ----- Startup animation -----
@@ -650,8 +672,17 @@ async function start() {
     })),
   });
   for (const err of loadResult.errors) {
-    log.error({ action: "plugin_load_failed", dir: err.dir, error: err.error });
+    log.error({
+      action: "plugin_load_failed",
+      plugin: err.name,
+      dir: err.dir,
+      error: err.error,
+      why: err.why,
+      fix: err.fix,
+      link: err.link,
+    });
   }
+  pluginErrors = loadResult.errors.map((e) => e.name);
   for (const conflict of loadResult.conflicts) {
     log.warn({ action: "plugin_conflict", message: conflict });
   }
@@ -686,6 +717,7 @@ async function start() {
   process.stdin.setRawMode(true);
   input.start();
   refreshRecoveryBanner();
+  showPluginErrors();
   playStartupAnimation();
   update();
 
@@ -694,7 +726,8 @@ async function start() {
 
   // async version check - shows a banner if a newer version is available
   void checkIfUpdateAvailable().then((latest) => {
-    if (!latest) return;
+    // don't replace a plugin error, that one matters more
+    if (!latest || activeAlert) return;
     const current = process.env.JANO_VERSION || "dev";
     activeAlert = createAlert(
       {
