@@ -46,7 +46,17 @@ export interface Draw {
   line(x1: number, y1: number, x2: number, y2: number, opts?: LineOpts): void;
   rect(x: number, y: number, w: number, h: number, opts?: RectOpts): void;
   flush(): void;
+  /** Writes only the given rows and leaves the terminal cursor where it was (for small animations). */
+  flushRows(rows: number[]): void;
 }
+
+// synchronized output: supporting terminals show a frame only once it is complete,
+// others ignore the sequence
+const SYNC_START = "\x1b[?2026h";
+const SYNC_END = "\x1b[?2026l";
+// save / restore the terminal cursor position (DECSC / DECRC)
+const SAVE_CURSOR = "\x1b7";
+const RESTORE_CURSOR = "\x1b8";
 
 export function createDraw(screen: Screen): Draw {
   let buffer: Cell[][] = [];
@@ -81,6 +91,28 @@ export function createDraw(screen: Screen): Draw {
       row[x + 1] = { char: " ", style: row[x + 1].style };
     }
     row[x] = { char, style };
+  }
+
+  function rowOutput(y: number): string {
+    let out = `\x1b[${y + 1};1H`;
+    let lastStyle = "";
+    for (let x = 0; x < bufW; x++) {
+      const cell = buffer[y][x];
+      if (cell.char === "") continue; // continuation of a wide glyph, already drawn
+      if (cell.style !== lastStyle) {
+        out += reset + cell.style;
+        lastStyle = cell.style;
+      }
+      if (buffer[y][x + 1]?.char === "") {
+        // terminals disagree on how wide some glyphs are (❤️ often counts as one column).
+        // paint the right half as a styled space first, then draw the glyph over it and
+        // jump to the next cell explicitly instead of trusting the terminal's advance.
+        out += `\x1b[${x + 2}G \x1b[${x + 1}G${cell.char}\x1b[${x + 3}G`;
+      } else {
+        out += cell.char;
+      }
+    }
+    return out;
   }
 
   function buildStyle(opts: StyleOpts): string {
@@ -174,29 +206,16 @@ export function createDraw(screen: Screen): Draw {
 
     flush() {
       ensureBuffer();
-      let out = "";
-      for (let y = 0; y < bufH; y++) {
-        out += `\x1b[${y + 1};1H`;
-        let lastStyle = "";
-        for (let x = 0; x < bufW; x++) {
-          const cell = buffer[y][x];
-          if (cell.char === "") continue; // continuation of a wide glyph — already drawn
-          if (cell.style !== lastStyle) {
-            out += reset + cell.style;
-            lastStyle = cell.style;
-          }
-          if (buffer[y][x + 1]?.char === "") {
-            // terminals disagree on how wide some glyphs are (❤️ often counts as one column).
-            // paint the right half as a styled space first, then draw the glyph over it and
-            // jump to the next cell explicitly instead of trusting the terminal's advance.
-            out += `\x1b[${x + 2}G \x1b[${x + 1}G${cell.char}\x1b[${x + 3}G`;
-          } else {
-            out += cell.char;
-          }
-        }
-      }
-      out += reset;
-      screen.write(out);
+      let out = SYNC_START;
+      for (let y = 0; y < bufH; y++) out += rowOutput(y);
+      screen.write(out + reset + SYNC_END);
+    },
+
+    flushRows(rows: number[]) {
+      ensureBuffer();
+      let out = SYNC_START + SAVE_CURSOR;
+      for (const y of rows) if (y >= 0 && y < bufH) out += rowOutput(y);
+      screen.write(out + reset + RESTORE_CURSOR + SYNC_END);
     },
   };
 }

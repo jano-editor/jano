@@ -11,7 +11,11 @@ import { getEditorSettings, updateEditorSetting, resetEditorSettings } from "../
 
 type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
-  | { kind: "toggle"; key: "insertSpaces" | "lineNumbers" | "autoComplete"; label: string }
+  | {
+      kind: "toggle";
+      key: "insertSpaces" | "lineNumbers" | "autoComplete" | "startupAnimation";
+      label: string;
+    }
   | { kind: "action"; action: "reset"; label: string };
 
 const editorSettingRows: EditorSettingRow[] = [
@@ -19,6 +23,7 @@ const editorSettingRows: EditorSettingRow[] = [
   { kind: "toggle", key: "insertSpaces", label: "Insert Spaces" },
   { kind: "toggle", key: "lineNumbers", label: "Line Numbers" },
   { kind: "toggle", key: "autoComplete", label: "Auto Complete" },
+  { kind: "toggle", key: "startupAnimation", label: "Startup Animation" },
   { kind: "action", action: "reset", label: "Reset to defaults" },
 ];
 
@@ -113,10 +118,15 @@ export function showSettings(s: Session): Promise<void> {
           }
         }
 
-        s.draw.text(x + 2, y + dialogH - 2, "↑↓ Navigate  ←→ Change  Enter Apply  Esc Back", {
-          fg: [70, 75, 85] as [number, number, number],
-          bg: [30, 33, 40] as [number, number, number],
-        });
+        // last row is the reset action, one row lower than the rest
+        const lastRowY = y + 2 + editorSettingRows.length;
+        // on very short terminals the footer would cover the reset row, so leave it out
+        if (y + dialogH - 2 > lastRowY) {
+          s.draw.text(x + 2, y + dialogH - 2, "↑↓ Navigate  ←→ Change  Enter Apply  Esc Back", {
+            fg: [70, 75, 85] as [number, number, number],
+            bg: [30, 33, 40] as [number, number, number],
+          });
+        }
       }
 
       s.screen.hideCursor();

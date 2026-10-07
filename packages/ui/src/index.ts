@@ -12,6 +12,16 @@ export type { AlertOptions, AlertType, AlertPosition, AlertColors, AlertState } 
 export { drawList, listMoveUp, listMoveDown } from "./list.ts";
 export type { ListItem, ListOptions, ListState } from "./list.ts";
 export { drawToggle, TOGGLE_WIDTH } from "./toggle.ts";
+export {
+  createReveal,
+  drawReveal,
+  isRevealDone,
+  revealDuration,
+  revealFrame,
+  revealSteps,
+  revealWidth,
+} from "./reveal.ts";
+export type { RevealOptions, RevealState } from "./reveal.ts";
 export type { ToggleOptions } from "./toggle.ts";
 export { drawPopup, popupMoveUp, popupMoveDown } from "./popup.ts";
 export type { PopupItem, PopupOptions } from "./popup.ts";
