@@ -7,7 +7,12 @@ import {
   type ListItem,
 } from "@jano-editor/ui";
 import type { Session } from "./session.ts";
-import { getEditorSettings, updateEditorSetting, resetEditorSettings } from "../settings.ts";
+import {
+  getEditorSettings,
+  getFileOverrides,
+  updateEditorSetting,
+  resetEditorSettings,
+} from "../settings.ts";
 
 type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
@@ -107,6 +112,13 @@ export function showSettings(s: Session): Promise<void> {
             s.draw.char(x + 1 + col, rowY, " ", { bg: rowBg });
           }
           s.draw.text(x + 3, rowY, row.label, { fg: labelFg, bg: rowBg });
+          // explains why changing it has no effect for this file
+          if (row.kind !== "action" && row.key in getFileOverrides()) {
+            s.draw.text(x + 4 + row.label.length, rowY, "· .editorconfig", {
+              fg: isSelected ? selectedFg : valueFg,
+              bg: rowBg,
+            });
+          }
 
           if (row.kind === "toggle") {
             drawToggle(s.draw, {

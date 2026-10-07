@@ -6,9 +6,30 @@ import { buildContext } from "../plugins/context.ts";
 import { applyEditResult } from "../plugins/apply.ts";
 import { callPluginHookAsync } from "../plugins/call.ts";
 import { getViewDimensions } from "../render.ts";
+import { resolveEditorConfig, applySaveRules } from "../editorconfig.ts";
 import type { Session } from "./session.ts";
 
 const SAVE_HOOK_TIMEOUT_MS = 3000;
+
+/**
+ * trim_trailing_whitespace / insert_final_newline from .editorconfig, as one undoable step.
+ * Uses the target path, so Save As into another project follows that project's rules.
+ */
+function applyEditorConfigOnSave(s: Session, filePath: string) {
+  const ec = resolveEditorConfig(filePath);
+  if (s.editor.isNewFile) {
+    if (ec.eol) s.editor.eol = ec.eol;
+    if (ec.bom !== undefined) s.editor.bom = ec.bom;
+  }
+  const next = applySaveRules(s.editor.lines, ec);
+  if (!next) return;
+  const p = s.cm.primary;
+  s.undo.snapshot("editorconfig", { x: p.x, y: p.y }, s.editor.lines, s.cm.saveState());
+  s.editor.lines = next;
+  s.cm.clampAll(s.editor.lines);
+  s.undo.commit({ x: p.x, y: p.y }, s.editor.lines, s.cm.saveState());
+  log.info({ action: "editorconfig_save_rules", path: filePath, files: ec.files });
+}
 
 /** Lets the plugin adjust the document right before it is written. Undoable like any edit. */
 async function runSaveHook(s: Session) {
@@ -99,6 +120,7 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
   }
 
   await runSaveHook(s);
+  applyEditorConfigOnSave(s, filePath);
 
   try {
     const mode = saveAs(s.editor, filePath);

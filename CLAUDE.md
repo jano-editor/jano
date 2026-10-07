@@ -169,6 +169,12 @@ Never call `screen.moveTo` / `screen.showCursor` from inside `render()` or an ov
 - Long non-ASCII lines get a cached grapheme index, so render cost stays bound to the viewport.
 - Plugins keep seeing string indices (`col` in the plugin API is a UTF-16 index).
 
+### Settings and .editorconfig
+
+- `getEditorSettings()` (`settings.ts`) returns the user's settings merged with `.editorconfig` overrides for the open file. Always read settings through it.
+- `editorconfig.ts` parses `.editorconfig` (own small parser and glob matcher, no dependency), walks up until `root = true`. `applyEditorConfig()` in `index.ts` runs on open, Save As and restore (via `reloadPlugin`).
+- `end_of_line` and `charset` only apply to new files, existing files keep what they have. `trim_trailing_whitespace` / `insert_final_newline` run on save as one undo step, after the plugin's `onSave`.
+
 ### Crash Safety
 
 - `utils/crash-guard.ts` restores the terminal on uncaught errors, SIGTERM and SIGHUP, and writes a final backup first.

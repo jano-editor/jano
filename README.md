@@ -49,6 +49,7 @@ npm install -g @jano-editor/editor
 - **Search & Replace** - Ctrl+F with live results
 - **Respects your files** - keeps LF or CRLF line endings and a UTF-8 BOM (mixed line endings are normalized). Tabs, emoji and CJK are drawn at their real width
 - **Crash recovery** - unsaved changes are backed up in the background (`~/.local/state/jano/backups/`). After a crash or a killed terminal, a banner offers to restore them (Ctrl+R)
+- **.editorconfig** - indentation, line endings, BOM, trailing whitespace and final newline follow the project's `.editorconfig` (F9 shows which values come from it)
 - **Settings dialog** - F9 for tab size, line numbers, autocomplete and the startup animation
 - **Structured debug logs** - `--debug` writes JSON events to `~/.cache/jano/logs/` for easy bug diagnosis
 - **Plugin system** - install plugins from the [Plugin Store](https://janoeditor.dev/plugins). On first start a welcome dialog offers the recommended plugins and installs them without a restart (turn it off in F9)
