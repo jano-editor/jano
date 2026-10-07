@@ -96,14 +96,14 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
       log.info({ action: "file_save_cancelled", reason: "invalid_utf8", path: filePath });
       return false;
     }
-    // asked once, from now on the buffer is plain UTF-8
-    s.editor.invalidUtf8 = false;
   }
 
   await runSaveHook(s);
 
   try {
     const mode = saveAs(s.editor, filePath);
+    // written as UTF-8 now, so don't ask again. stays set if the save failed.
+    s.editor.invalidUtf8 = false;
     s.reloadPlugin();
     log.info({ action: "file_save_done", path: filePath, mode });
     return true;

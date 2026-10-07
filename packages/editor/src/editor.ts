@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { writeFileSafely, type WriteMode } from "./safe-write.ts";
 import { colAt, nextBoundary, prevBoundary } from "./text-layout.ts";
 
@@ -93,8 +93,15 @@ const BINARY_SNIFF_BYTES = 8000;
 export function readTextFile(filePath: string): { text: string; invalidUtf8: boolean } {
   let buf: Buffer;
   try {
+    // only regular files: reading a pipe blocks forever, /dev/zero never ends
+    const stat = statSync(filePath);
+    if (stat.isDirectory()) throw new OpenError(`${filePath} is a directory.`);
+    if (!stat.isFile()) {
+      throw new OpenError(`${filePath} is not a regular file (device, pipe or socket).`);
+    }
     buf = readFileSync(filePath);
   } catch (err) {
+    if (err instanceof OpenError) throw err;
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "EISDIR") throw new OpenError(`${filePath} is a directory.`);
     if (code === "EACCES" || code === "EPERM") {

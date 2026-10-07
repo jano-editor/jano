@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, afterAll } from "bun:test";
 import {
   createEditor,
   insertChar,
@@ -16,7 +16,7 @@ import {
   readTextFile,
   OpenError,
 } from "../editor.ts";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wordBoundaryLeft } from "../cursor-manager.ts";
@@ -287,6 +287,7 @@ describe("file format", () => {
 
 describe("readTextFile", () => {
   const dir = mkdtempSync(join(tmpdir(), "jano-read-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
   const file = (name: string, bytes: number[] | string) => {
     const path = join(dir, name);
     writeFileSync(path, typeof bytes === "string" ? bytes : Buffer.from(bytes));
@@ -319,6 +320,10 @@ describe("readTextFile", () => {
   it("explains folders", () => {
     expect(() => readTextFile(dir)).toThrow(OpenError);
     expect(() => readTextFile(dir)).toThrow("is a directory");
+  });
+
+  it("refuses devices and pipes instead of reading forever", () => {
+    expect(() => readTextFile("/dev/zero")).toThrow("not a regular file");
   });
 
   it.skipIf(process.getuid?.() === 0)("explains missing read permission", () => {
