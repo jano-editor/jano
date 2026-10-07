@@ -119,10 +119,13 @@ Plugins live in a separate repo (`~/projects/jano-plugins/`): plugin-yaml, plugi
 **Plugin interface** (`@jano-editor/plugin-types` → `LanguagePlugin`):
 
 - Highlighting: `highlight` (regex patterns), `highlightLine` (custom tokenizer with multiline access)
-- Edit hooks: `onCursorAction`, `onKeyDown`, `onFormat`, `onSave`, `onOpen`
+- Edit hooks: `onCursorAction`, `onKeyDown` (sync, run per keystroke), `onFormat` (F3), `onSave` (before writing, edits are saved and undoable), `onOpen` (on start and after a restore, not after saves)
 - Validation: `onValidate` (debounced, returns `Diagnostic[]`)
 - Autocomplete: `onComplete` (returns `CompletionItem[]`)
-- All hooks are called through `callPluginHook()` which isolates crashes and logs failures with stack traces in debug mode
+- API v2: `onFormat`, `onSave`, `onOpen`, `onValidate`, `onComplete` may return a Promise. Late results are dropped if the document or cursor changed meanwhile. Plugins returning Promises must declare `"api": 2`, so older jano versions reject them cleanly. `MIN_API_VERSION` / `CURRENT_API_VERSION` live in `plugins/manifest.ts`.
+- Sync hooks go through `callPluginHook()`, async-capable ones through `callPluginHookAsync()` (timeout, rejections). Both isolate crashes and log failures with stack traces in debug mode
+- Positions (`col`, token `start`/`end`) are UTF-16 string indices, not screen columns
+- Load errors are explained with `why` / `fix` / `link` (`loader.ts`), shown in `jano plugin list` and as an alert on startup
 
 **Installation:** ZIP download from `https://janoeditor.dev/api/plugins/`, extracted via `adm-zip`
 

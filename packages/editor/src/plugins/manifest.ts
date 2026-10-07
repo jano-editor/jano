@@ -1,5 +1,6 @@
 // newest plugin API this jano understands. plugins declaring a higher one need a newer jano.
-export const CURRENT_API_VERSION = 1;
+// v2: async hooks, onSave / onOpen wired up (see PLUGIN_API_VERSION in @jano-editor/plugin-types)
+export const CURRENT_API_VERSION = 2;
 // oldest plugin API still supported. raise it when a breaking change drops old plugins.
 export const MIN_API_VERSION = 1;
 

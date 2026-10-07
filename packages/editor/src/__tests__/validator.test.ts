@@ -119,3 +119,51 @@ describe("Validator", () => {
     expect(callCount).toBe(1);
   });
 });
+
+describe("Validator with async plugins (api 2)", () => {
+  const diag = (message: string) => ({ line: 0, col: 0, severity: "error" as const, message });
+
+  it("uses diagnostics from an async onValidate", async () => {
+    const plugin: LanguagePlugin = {
+      name: "async",
+      extensions: [".a"],
+      onValidate: async () => [diag("async error")],
+    };
+    const v = createValidator(plugin);
+    v.schedule(["x"]);
+    await new Promise((r) => setTimeout(r, 600));
+    expect(v.state.diagnostics.map((d) => d.message)).toEqual(["async error"]);
+  });
+
+  it("drops a slow old result when a newer run finished first", async () => {
+    let call = 0;
+    const plugin: LanguagePlugin = {
+      name: "async",
+      extensions: [".a"],
+      onValidate: (lines) => {
+        call++;
+        // first run is slow, second is fast
+        const delay = call === 1 ? 900 : 0;
+        return new Promise((r) => setTimeout(() => r([diag(lines[0])]), delay));
+      },
+    };
+    const v = createValidator(plugin);
+    v.schedule(["old"]);
+    await new Promise((r) => setTimeout(r, 550)); // first run started, still pending
+    v.schedule(["new"]);
+    await new Promise((r) => setTimeout(r, 1000)); // both finished
+    expect(v.state.diagnostics.map((d) => d.message)).toEqual(["new"]);
+  });
+
+  it("treats a non-array result as no diagnostics", async () => {
+    const plugin = {
+      name: "weird",
+      extensions: [".w"],
+      onValidate: async () => null,
+    } as unknown as LanguagePlugin;
+    const v = createValidator(plugin);
+    v.schedule(["x"]);
+    await new Promise((r) => setTimeout(r, 600));
+    expect(v.state.diagnostics).toEqual([]);
+  });
+});

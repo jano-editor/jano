@@ -22,4 +22,6 @@ export interface Session {
   pluginVersion: string | undefined;
   update(this: void): void;
   reloadPlugin(this: void): void;
+  /** tells the plugin a file was opened (onOpen), not called after saves */
+  fileOpened(this: void): void;
 }

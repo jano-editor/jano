@@ -1,5 +1,16 @@
 export type RGB = [number, number, number];
 
+/**
+ * Plugin API version this package describes. Put it in plugin.json as "api".
+ * v2 adds async hooks (onFormat, onSave, onOpen, onValidate, onComplete may return a Promise)
+ * and wires up onSave / onOpen. Plugins that return Promises must declare api 2, older jano
+ * versions then refuse to load them instead of misreading the Promise.
+ */
+export const PLUGIN_API_VERSION = 2;
+
+/** A hook result, either directly or as a Promise (api 2). */
+export type MaybePromise<T> = T | Promise<T>;
+
 // ----- Highlighting -----
 
 export interface HighlightPatterns {
@@ -20,6 +31,7 @@ export interface HighlightPatterns {
 }
 
 export interface HighlightToken {
+  /** UTF-16 string index, like String.prototype.slice */
   start: number;
   end: number;
   type: string;
@@ -29,6 +41,7 @@ export interface HighlightToken {
 
 export interface Position {
   line: number;
+  /** UTF-16 string index into the line (not a screen column, tabs and emoji count as their length) */
   col: number;
 }
 
@@ -171,26 +184,30 @@ export interface LanguagePlugin {
   highlightLine?(line: string, lineIndex: number, lines: readonly string[]): HighlightToken[];
 
   // fired on key press, before the editor processes it
-  // plugin can handle the key itself and prevent default behavior
+  // plugin can handle the key itself and prevent default behavior.
+  // stays synchronous: it runs on every keystroke.
   onKeyDown?(key: KeyInfo, context: PluginContext): KeyResult | null;
 
   // fired after each cursor action (newline, char typed, delete, etc.)
-  // called once per cursor — plugin can respond with edits for that cursor
+  // called once per cursor — plugin can respond with edits for that cursor.
+  // stays synchronous: it runs on every keystroke.
   onCursorAction?(context: PluginContext): EditResult | null;
 
-  // fired on explicit format request (F3) — whole document
-  onFormat?(context: PluginContext): EditResult | null;
+  // fired on explicit format request (F3) — whole document.
+  // a late result is dropped if the user edited the document in the meantime.
+  onFormat?(context: PluginContext): MaybePromise<EditResult | null>;
 
-  // fired on save
-  onSave?(context: PluginContext): EditResult | null;
+  // fired before the file is written. returned edits are applied and saved (undoable).
+  onSave?(context: PluginContext): MaybePromise<EditResult | null>;
 
-  // fired when file is opened
-  onOpen?(context: PluginContext): void;
+  // fired when a file is opened (on start and after restoring a backup), not after saves
+  onOpen?(context: PluginContext): MaybePromise<void>;
 
-  // validate document content — called async, debounced
+  // validate document content — debounced, only the newest result is used
   // return diagnostics (errors, warnings) for the editor to display
-  onValidate?(lines: readonly string[]): Diagnostic[];
+  onValidate?(lines: readonly string[]): MaybePromise<Diagnostic[]>;
 
-  // return completion candidates at the current cursor position
-  onComplete?(context: PluginContext): CompletionItem[] | null;
+  // return completion candidates at the current cursor position.
+  // a late result is dropped if the cursor moved in the meantime.
+  onComplete?(context: PluginContext): MaybePromise<CompletionItem[] | null>;
 }

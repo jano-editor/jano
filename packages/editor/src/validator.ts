@@ -20,6 +20,8 @@ export function createValidator(plugin: LanguagePlugin | null, onDone?: () => vo
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastInput = "";
+  // onValidate may be async (api 2), only the newest run may set diagnostics
+  let runId = 0;
 
   return {
     get state() {
@@ -41,30 +43,40 @@ export function createValidator(plugin: LanguagePlugin | null, onDone?: () => vo
       const snapshot = [...lines];
       log.debug({ action: "validator_schedule", plugin: plugin.name, lineCount: snapshot.length });
 
+      const run = ++runId;
       timer = setTimeout(() => {
         const start = Date.now();
-        try {
-          state.diagnostics = plugin.onValidate!(snapshot);
-          log.debug({
-            action: "validator_run_done",
-            plugin: plugin.name,
-            diagnosticCount: state.diagnostics.length,
-            durationMs: Date.now() - start,
-          });
-        } catch (err) {
-          state.diagnostics = [];
-          log.error({
-            action: "validator_run_failed",
-            plugin: plugin.name,
-            error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
-          });
-        }
-        onDone?.();
+        void Promise.resolve()
+          .then(() => plugin.onValidate!(snapshot))
+          .then(
+            (result) => {
+              if (run !== runId) return; // superseded by a newer edit
+              state.diagnostics = Array.isArray(result) ? result : [];
+              log.debug({
+                action: "validator_run_done",
+                plugin: plugin.name,
+                diagnosticCount: state.diagnostics.length,
+                durationMs: Date.now() - start,
+              });
+              onDone?.();
+            },
+            (err) => {
+              if (run !== runId) return;
+              state.diagnostics = [];
+              log.error({
+                action: "validator_run_failed",
+                plugin: plugin.name,
+                error: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined,
+              });
+              onDone?.();
+            },
+          );
       }, DEBOUNCE_MS);
     },
 
     clear() {
+      runId++;
       if (timer) clearTimeout(timer);
       lastInput = "";
       state.diagnostics = [];

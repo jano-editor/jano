@@ -43,6 +43,7 @@ import {
   applyCompletionAtCursors,
 } from "./completion.ts";
 import { buildContext } from "./plugins/context.ts";
+import { callPluginHookAsync } from "./plugins/call.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths, getBackupsDir } from "./plugins/config.ts";
 import { createBackupManager, listOrphanedBackups } from "./backup.ts";
@@ -89,6 +90,7 @@ const session: Session = {
   pluginVersion: undefined,
   update,
   reloadPlugin,
+  fileOpened,
 };
 
 // ----- Rendering -----
@@ -181,6 +183,22 @@ function reloadPlugin() {
   }
   session.validator = createValidator(session.plugin, () => renderView());
   refreshGitInfo();
+}
+
+const OPEN_HOOK_TIMEOUT_MS = 5000;
+
+// onOpen is fire and forget, it may be async (api 2) but nothing waits for it
+function fileOpened() {
+  const plugin = session.plugin;
+  if (!plugin?.onOpen) return;
+  const { viewW, viewH } = getViewDimensions(screen, editor.lines.length, plugin);
+  const ctx = buildContext(editor, cm, {
+    firstLine: cm.scrollY,
+    lastLine: cm.scrollY + viewH,
+    width: viewW,
+    height: viewH,
+  });
+  void callPluginHookAsync(plugin, "onOpen", () => plugin.onOpen!(ctx), OPEN_HOOK_TIMEOUT_MS);
 }
 
 function refreshGitInfo() {
@@ -281,7 +299,11 @@ async function openRecovery() {
 
 let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
+// bumped on every new request and on cancel, so late plugin answers are dropped
+let completionRequest = 0;
+
 function cancelAutoComplete() {
+  completionRequest++;
   if (autoCompleteTimer) {
     clearTimeout(autoCompleteTimer);
     autoCompleteTimer = null;
@@ -311,8 +333,18 @@ function openCompletion() {
     width: viewW,
     height: viewH,
   });
-  triggerCompletion(comp, session.plugin, ctx, editor.lines, p.y, p.x);
-  renderView();
+  // the popup only opens if nothing changed while a (possibly async) plugin answered
+  const request = ++completionRequest;
+  const { x, y } = p;
+  const lineBefore = editor.lines[y];
+  const isCurrent = () =>
+    request === completionRequest &&
+    cm.primary.x === x &&
+    cm.primary.y === y &&
+    editor.lines[y] === lineBefore;
+  void triggerCompletion(comp, session.plugin, ctx, editor.lines, y, x, isCurrent).then(() => {
+    if (isCurrent()) renderView();
+  });
 }
 
 function acceptCompletion() {
@@ -380,7 +412,7 @@ function dispatch(key: KeyEvent) {
     }
   }
 
-  const result = handleKey(key, editor, cm, screen, undo, session.plugin);
+  const result = handleKey(key, editor, cm, screen, undo, session.plugin, update);
   if (result !== "continue") {
     cancelAutoComplete();
     closeCompletion(comp);
@@ -698,6 +730,7 @@ async function start() {
 
   if (filePath) {
     reloadPlugin();
+    fileOpened();
     if (session.plugin) {
       log.info({
         action: "language_detected",

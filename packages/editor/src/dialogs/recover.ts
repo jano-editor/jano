@@ -71,6 +71,7 @@ function restore(s: Session, entry: BackupEntry) {
   s.undo.clear();
   s.cm.restoreState({ cursors: [{ x: 0, y: 0, anchor: null }], scrollX: 0, scrollY: 0 });
   s.reloadPlugin();
+  s.fileOpened();
 
   // take over the backup before deleting the orphan, so there is never a gap
   s.backup.writeNow(s.editor);
