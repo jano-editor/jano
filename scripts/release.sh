@@ -73,10 +73,16 @@ fs.writeFileSync('$PACKAGE_JSON', JSON.stringify(pkg, null, 2) + '\n');
 
 echo "Updated $PACKAGE_JSON to v$VERSION"
 
-# commit and tag
-git add "$PACKAGE_JSON"
-git commit -m "release: $NPM_NAME v$VERSION"
-git tag "$TAG_NAME"
+# commit and tag. a retried release (version already set, e.g. after a failed publish)
+# has nothing to commit, then only the tag is (re)created
+if git diff --quiet -- "$PACKAGE_JSON"; then
+  echo "Version already set, skipping the commit"
+else
+  git add "$PACKAGE_JSON"
+  git commit -m "release: $NPM_NAME v$VERSION"
+fi
+# a leftover local tag from a failed run is replaced
+git tag -f "$TAG_NAME"
 
 echo "Created commit and tag: $TAG_NAME"
 
