@@ -28,6 +28,11 @@ export function setFileOverrides(overrides: Partial<EditorSettings>): void {
   fileOverrides = overrides;
 }
 
+/** The user's own settings, without .editorconfig. This is what the settings dialog edits. */
+export function getUserSettings(): Readonly<EditorSettings> {
+  return getConfig().editor;
+}
+
 /** Which settings currently come from .editorconfig, for the settings dialog. */
 export function getFileOverrides(): Readonly<Partial<EditorSettings>> {
   return fileOverrides;

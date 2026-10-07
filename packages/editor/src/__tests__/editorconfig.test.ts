@@ -49,6 +49,37 @@ describe("globMatcher", () => {
     expect(matches("v{1..3}.md", "v7.md")).toBe(false);
   });
 
+  it("handles nested braces and literal {single} braces", () => {
+    expect(matches("{word,{also},this}.g", "word.g")).toBe(true);
+    expect(matches("{word,{also},this}.g", "{also}.g")).toBe(true);
+    expect(matches("{single}.b", "{single}.b")).toBe(true);
+    expect(matches("{a,{b,c}}.x", "c.x")).toBe(true);
+  });
+
+  it("number ranges work inside alternatives and after *", () => {
+    expect(matches("{x,{1..3}}.txt", "x.txt")).toBe(true);
+    expect(matches("{x,{1..3}}.txt", "2.txt")).toBe(true);
+    expect(matches("*{10..20}.txt", "file12.txt")).toBe(true);
+  });
+
+  it("rejects leading zeros in number ranges", () => {
+    expect(matches("{3..120}", "60")).toBe(true);
+    expect(matches("{3..120}", "060")).toBe(false);
+    expect(matches("{1..5000}", "0042")).toBe(false); // the big, captured variant
+  });
+
+  it("treats brackets with a slash, empty or [!] as literal text", () => {
+    expect(matches("ab[e/]cd.i", "ab/cd.i")).toBe(false);
+    expect(matches("ab[e/]cd.i", "ab[e/]cd.i")).toBe(true);
+    expect(matches("a[!]b", "a[!]b")).toBe(true);
+    expect(matches("a[!]b", "axb")).toBe(false);
+  });
+
+  it("only makes **/ optional at the start of a segment", () => {
+    expect(matches("c**/z.c", "cz.c")).toBe(false);
+    expect(matches("c**/z.c", "cx/z.c")).toBe(true);
+  });
+
   it("treats regex characters literally", () => {
     expect(matches("a+b.(txt)", "a+b.(txt)")).toBe(true);
     expect(matches("a+b.txt", "aab.txt")).toBe(false);
@@ -112,11 +143,14 @@ describe("resolveEditorConfig", () => {
   it("stops at root = true", () => {
     // a config above the root must not apply
     const outer = mkdtempSync(join(tmpdir(), "jano-ec-outer-"));
-    writeFileSync(join(outer, ".editorconfig"), "[*]\nindent_size = 7\n");
-    mkdirSync(join(outer, "project"));
-    writeFileSync(join(outer, "project", ".editorconfig"), "root = true\n");
-    expect(resolveEditorConfig(join(outer, "project", "a.txt")).settings).toEqual({});
-    rmSync(outer, { recursive: true, force: true });
+    try {
+      writeFileSync(join(outer, ".editorconfig"), "[*]\nindent_size = 7\n");
+      mkdirSync(join(outer, "project"));
+      writeFileSync(join(outer, "project", ".editorconfig"), "root = true\n");
+      expect(resolveEditorConfig(join(outer, "project", "a.txt")).settings).toEqual({});
+    } finally {
+      rmSync(outer, { recursive: true, force: true });
+    }
   });
 });
 

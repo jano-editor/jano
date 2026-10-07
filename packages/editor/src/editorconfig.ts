@@ -54,82 +54,130 @@ export function parseEditorConfig(text: string): ParsedFile {
 
 /**
  * Turns an editorconfig glob into a matcher for paths relative to the .editorconfig folder
- * (forward slashes). Supports *, **, ?, [abc], [!abc], {a,b} and {1..10}.
+ * (forward slashes). Supports *, **, ?, [abc], [!abc], {a,b} (nestable) and {1..10}.
  */
 export function globMatcher(pattern: string): (relPath: string) => boolean {
   // without a slash the pattern matches the file name in any subfolder
   const glob = pattern.includes("/") ? pattern.replace(/^\//, "") : `**/${pattern}`;
   const ranges: [number, number][] = [];
-  let re = "";
-  let braceDepth = 0;
+  const regex = new RegExp(`^${convertGlob(glob, ranges)}$`);
+  return (relPath) => {
+    const m = regex.exec(relPath);
+    if (!m) return false;
+    // only huge number ranges are captured, small ones are spelled out in the regex
+    return ranges.every(([lo, hi], idx) => {
+      const captured = m[idx + 1];
+      if (captured === undefined) return true; // that alternative wasn't taken
+      const n = Number(captured);
+      return String(n) === captured && n >= lo && n <= hi;
+    });
+  };
+}
 
+// ranges up to this size become a plain alternation (1|2|3), so no check after matching
+const MAX_SPELLED_OUT_RANGE = 1000;
+
+function convertGlob(glob: string, ranges: [number, number][]): string {
+  let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
     if (c === "\\" && i + 1 < glob.length) {
       re += escapeRe(glob[++i]);
     } else if (c === "*") {
-      if (glob[i + 1] === "*") {
-        // "**/" may also match nothing, so "**/a" matches "a" and "x/y/a"
-        if (glob[i + 2] === "/") {
-          re += "(?:.*/)?";
-          i += 2;
-        } else {
-          re += ".*";
-          i++;
-        }
-      } else {
+      if (glob[i + 1] !== "*") {
         re += "[^/]*";
+      } else if (glob[i + 2] === "/" && (i === 0 || glob[i - 1] === "/")) {
+        // "**/" at the start of a segment may match nothing: "**/a" matches "a" and "x/a"
+        re += "(?:.*/)?";
+        i += 2;
+      } else {
+        re += ".*";
+        i++;
       }
     } else if (c === "?") {
       re += "[^/]";
     } else if (c === "[") {
       const end = glob.indexOf("]", i + 1);
-      if (end === -1) {
+      const set = end === -1 ? "" : glob.slice(i + 1, end);
+      const negate = set.startsWith("!");
+      const chars = negate ? set.slice(1) : set;
+      if (end === -1 || !chars || set.includes("/")) {
+        // unclosed, empty or containing a slash: literal text, like editorconfig-core
         re += "\\[";
       } else {
-        let set = glob.slice(i + 1, end);
-        const negate = set.startsWith("!");
-        if (negate) set = set.slice(1);
-        re += `[${negate ? "^" : ""}${set.replace(/[\\\]^]/g, "\\$&")}]`;
+        re += `[${negate ? "^" : ""}${chars.replace(/[\\\]^]/g, "\\$&")}]`;
         i = end;
       }
     } else if (c === "{") {
-      const end = glob.indexOf("}", i + 1);
-      const range = end === -1 ? null : /^(-?\d+)\.\.(-?\d+)$/.exec(glob.slice(i + 1, end));
-      if (range) {
-        ranges.push([Number(range[1]), Number(range[2])]);
-        re += "(-?\\d+)";
-        i = end;
-      } else if (end !== -1 && glob.slice(i + 1, end).includes(",")) {
-        re += "(?:";
-        braceDepth++;
-      } else {
+      const end = matchingBrace(glob, i);
+      if (end === -1) {
         re += "\\{";
+        continue;
       }
-    } else if (c === "," && braceDepth > 0) {
-      re += "|";
-    } else if (c === "}" && braceDepth > 0) {
-      re += ")";
-      braceDepth--;
+      const inner = glob.slice(i + 1, end);
+      const range = /^(-?\d+)\.\.(-?\d+)$/.exec(inner);
+      const parts = splitTopLevel(inner);
+      if (range) {
+        re += numberRange(Number(range[1]), Number(range[2]), ranges);
+      } else if (parts.length > 1) {
+        re += `(?:${parts.map((part) => convertGlob(part, ranges)).join("|")})`;
+      } else {
+        // braces without a comma are literal: "{single}" matches "{single}"
+        re += `\\{${convertGlob(inner, ranges)}\\}`;
+      }
+      i = end;
     } else {
       re += escapeRe(c);
     }
   }
+  return re;
+}
 
-  const regex = new RegExp(`^${re}$`);
-  return (relPath) => {
-    const m = regex.exec(relPath);
-    if (!m) return false;
-    // only number ranges are capture groups, check them here
-    return ranges.every(([lo, hi], idx) => {
-      const n = Number(m[idx + 1]);
-      return n >= Math.min(lo, hi) && n <= Math.max(lo, hi);
-    });
-  };
+function numberRange(a: number, b: number, ranges: [number, number][]): string {
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (hi - lo > MAX_SPELLED_OUT_RANGE) {
+    ranges.push([lo, hi]);
+    return "(-?\\d+)";
+  }
+  const numbers: string[] = [];
+  for (let n = lo; n <= hi; n++) numbers.push(String(n));
+  // longest first, so "12" is tried before "1"
+  numbers.sort((x, y) => y.length - x.length);
+  return `(?:${numbers.join("|")})`;
+}
+
+/** Index of the "}" closing the "{" at `start`, or -1. */
+function matchingBrace(glob: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < glob.length; i++) {
+    if (glob[i] === "\\") i++;
+    else if (glob[i] === "{") depth++;
+    else if (glob[i] === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Splits brace content at commas that aren't inside nested braces. */
+function splitTopLevel(inner: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let last = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "\\") i++;
+    else if (inner[i] === "{") depth++;
+    else if (inner[i] === "}") depth--;
+    else if (inner[i] === "," && depth === 0) {
+      parts.push(inner.slice(last, i));
+      last = i + 1;
+    }
+  }
+  parts.push(inner.slice(last));
+  return parts;
 }
 
 function escapeRe(c: string): string {
-  return c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  return c.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
 }
 
 /** Collects the .editorconfig properties for a file, walking up until `root = true`. */
