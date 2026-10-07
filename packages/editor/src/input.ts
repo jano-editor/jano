@@ -8,7 +8,8 @@ import { wordBoundaryLeft, wordBoundaryRight } from "./cursor-manager.ts";
 import * as ed from "./editor.ts";
 import { buildContext, buildAction } from "./plugins/context.ts";
 import { applyEditResult } from "./plugins/apply.ts";
-import { callPluginHook } from "./plugins/call.ts";
+import { callPluginHook, callPluginHookAsync } from "./plugins/call.ts";
+import { log } from "./utils/logger.ts";
 import { getEditorSettings } from "./settings.ts";
 import { colAt, idxAtCol } from "./text-layout.ts";
 
@@ -62,6 +63,42 @@ function notifyPlugin(
   if (result) applyEditResult(result, editor, cm, c);
 }
 
+const FORMAT_TIMEOUT_MS = 5000;
+
+/**
+ * Runs the plugin's formatter. It may be async (api 2), so the result is applied when it
+ * arrives, unless the document changed in the meantime. onApplied re-renders afterwards.
+ */
+function formatDocument(
+  editor: EditorState,
+  cm: CursorManager,
+  undo: UndoManager,
+  plugin: LanguagePlugin,
+  ctx: ReturnType<typeof buildContext>,
+  onApplied?: () => void,
+) {
+  const before = editor.lines.join("\n");
+  void callPluginHookAsync(plugin, "onFormat", () => plugin.onFormat!(ctx), FORMAT_TIMEOUT_MS).then(
+    (result) => {
+      if (!result) return;
+      if (editor.lines.join("\n") !== before) {
+        log.info({ action: "plugin_result_stale", plugin: plugin.name, hook: "onFormat" });
+        return;
+      }
+      const linesBefore = [...editor.lines];
+      snap(undo, "format", cm, editor);
+      applyEditResult(result, editor, cm);
+      // only commit if content actually changed
+      const changed =
+        editor.lines.length !== linesBefore.length ||
+        editor.lines.some((l, i) => l !== linesBefore[i]);
+      if (changed) commit(undo, cm, editor);
+      cm.clampAll(editor.lines);
+      onApplied?.();
+    },
+  );
+}
+
 function snap(undo: UndoManager, label: string, cm: CursorManager, editor: EditorState) {
   undo.snapshot(label, { x: cm.primary.x, y: cm.primary.y }, editor.lines, cm.saveState());
 }
@@ -86,6 +123,8 @@ export function handleKey(
   screen: Screen,
   undo: UndoManager,
   plugin: LanguagePlugin | null,
+  /** re-render after async plugin results (e.g. a formatter) arrive */
+  requestRender?: () => void,
 ): HandleKeyResult {
   // --- plugin onKeyDown: let plugin intercept keys before editor ---
   if (plugin?.onKeyDown) {
@@ -228,19 +267,8 @@ export function handleKey(
 
   if (key.name === "f3" || key.name === "f4") {
     if (key.name === "f3" && plugin?.onFormat) {
-      const linesBefore = [...editor.lines];
-      snap(undo, "format", cm, editor);
       const ctx = buildContext(editor, cm, getViewport(cm, screen));
-      const result = callPluginHook(plugin, "onFormat", () => plugin.onFormat!(ctx));
-      if (result) applyEditResult(result, editor, cm);
-      // only commit if content actually changed
-      const changed =
-        editor.lines.length !== linesBefore.length ||
-        editor.lines.some((l, i) => l !== linesBefore[i]);
-      if (changed) {
-        commit(undo, cm, editor);
-      }
-      cm.clampAll(editor.lines);
+      formatDocument(editor, cm, undo, plugin, ctx, requestRender);
     }
     return "continue";
   }

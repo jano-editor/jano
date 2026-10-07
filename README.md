@@ -51,7 +51,7 @@ npm install -g @jano-editor/editor
 - **Crash recovery** - unsaved changes are backed up in the background (`~/.local/state/jano/backups/`). After a crash or a killed terminal, a banner offers to restore them (Ctrl+R)
 - **Settings dialog** - F9 for tab size, line numbers, autocomplete and the startup animation
 - **Structured debug logs** - `--debug` writes JSON events to `~/.cache/jano/logs/` for easy bug diagnosis
-- **Plugin system** - install plugins from the [Plugin Store](https://janoeditor.dev/plugins)
+- **Plugin system** - install plugins from the [Plugin Store](https://janoeditor.dev/plugins). On first start a welcome dialog offers the recommended plugins and installs them without a restart (turn it off in F9)
 - **60,000+ lines** - no lag, ~59KB JS bundle, starts instantly
 - **Cross-platform** - Linux, macOS, Windows, WSL
 

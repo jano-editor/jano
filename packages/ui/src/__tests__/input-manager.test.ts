@@ -142,3 +142,31 @@ describe("keyToCombo", () => {
     expect(keyToCombo(ctrlQ)).toBe("ctrl+q");
   });
 });
+
+describe("layer rendering", () => {
+  it("renders layers with a render function bottom to top", () => {
+    const input = createInputManager();
+    const order: string[] = [];
+    input.pushLayer("editor");
+    input.pushLayer("settings", () => order.push("settings"));
+    input.pushLayer("dialog", () => order.push("dialog"));
+    expect(input.renderLayers()).toBe(true);
+    expect(order).toEqual(["settings", "dialog"]);
+  });
+
+  it("reports false when nothing visible is open", () => {
+    const input = createInputManager();
+    input.pushLayer("editor");
+    expect(input.renderLayers()).toBe(false);
+  });
+
+  it("stops rendering a layer once it is popped", () => {
+    const input = createInputManager();
+    let renders = 0;
+    const layer = input.pushLayer("dialog", () => renders++);
+    input.renderLayers();
+    input.popLayer(layer);
+    input.renderLayers();
+    expect(renders).toBe(1);
+  });
+});

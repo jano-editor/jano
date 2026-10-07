@@ -43,8 +43,12 @@ import {
   applyCompletionAtCursors,
 } from "./completion.ts";
 import { buildContext } from "./plugins/context.ts";
+import { callPluginHookAsync } from "./plugins/call.ts";
 import { initPlugins, detectLanguage, getLoadedPlugins } from "./plugins/index.ts";
 import { getPaths, getBackupsDir } from "./plugins/config.ts";
+import { fetchPluginList, type RegistryPlugin } from "./plugins/registry.ts";
+import { pickRecommendations } from "./plugins/recommendations.ts";
+import { showPluginWelcome } from "./dialogs/welcome.ts";
 import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
 import { getEditorSettings } from "./settings.ts";
@@ -89,6 +93,7 @@ const session: Session = {
   pluginVersion: undefined,
   update,
   reloadPlugin,
+  fileOpened,
 };
 
 // ----- Rendering -----
@@ -96,6 +101,9 @@ const session: Session = {
 let activeAlert: AlertState | null = null;
 let recoveryAlert: AlertState | null = null;
 let titleReveal: RevealState | null = null;
+let pluginErrors: string[] = [];
+// set on the first key press, so the plugin welcome never pops up mid typing
+let userTyped = false;
 
 function renderView() {
   render(
@@ -116,9 +124,12 @@ function renderView() {
       draw.flush();
     }
   }
+  // open dialogs paint on top, so timers, banners and async results can redraw the
+  // screen at any time without hiding them. a dialog also owns the terminal cursor.
+  const dialogOpen = input.renderLayers();
   // must be the LAST step of the render cycle: every preceding flush can move
   // the terminal cursor to the last written cell, which would hide the blink.
-  positionCursor(screen, editor, cm, session.plugin);
+  if (!dialogOpen) positionCursor(screen, editor, cm, session.plugin);
 }
 
 const KIND_ICONS: Record<string, string> = {
@@ -182,11 +193,80 @@ function reloadPlugin() {
   refreshGitInfo();
 }
 
+const OPEN_HOOK_TIMEOUT_MS = 5000;
+
+// onOpen is fire and forget, it may be async (api 2) but nothing waits for it
+function fileOpened() {
+  const plugin = session.plugin;
+  if (!plugin?.onOpen) return;
+  const { viewW, viewH } = getViewDimensions(screen, editor.lines.length, plugin);
+  const ctx = buildContext(editor, cm, {
+    firstLine: cm.scrollY,
+    lastLine: cm.scrollY + viewH,
+    width: viewW,
+    height: viewH,
+  });
+  void callPluginHookAsync(plugin, "onOpen", () => plugin.onOpen!(ctx), OPEN_HOOK_TIMEOUT_MS);
+}
+
 function refreshGitInfo() {
   void getGitInfo(editor.filePath).then((info) => {
     gitInfo = info;
     update();
   });
+}
+
+// ----- Plugin load errors -----
+
+// broken plugins used to fail silently, the details live in `jano plugin list`
+function showPluginErrors() {
+  if (pluginErrors.length === 0) return;
+  const what =
+    pluginErrors.length === 1 ? `Plugin ${pluginErrors[0]}` : `${pluginErrors.length} plugins`;
+  activeAlert = createAlert(
+    {
+      type: "error",
+      position: "top",
+      message: `${what} failed to load, see 'jano plugin list'`,
+      autoClose: 10000,
+    },
+    () => {
+      activeAlert = null;
+      update();
+    },
+  );
+}
+
+// ----- Plugin recommendations -----
+
+/** Offers missing registry plugins on startup. Skipped offline, mid typing or over a dialog. */
+async function offerPlugins() {
+  if (!getEditorSettings().pluginRecommendations) return;
+  let available: RegistryPlugin[];
+  try {
+    available = await fetchPluginList();
+  } catch (err) {
+    log.info({ action: "plugin_welcome_skipped", reason: "offline", error: String(err) });
+    return;
+  }
+  const missing = pickRecommendations(available);
+  const busy = userTyped || input.topLayerName() !== "editor";
+  if (missing.length === 0 || busy) {
+    log.info({
+      action: "plugin_welcome_skipped",
+      reason: missing.length === 0 ? "nothing_new" : "busy",
+    });
+    return;
+  }
+  await showPluginWelcome(session, missing, reloadAllPlugins);
+}
+
+/** Loads freshly installed plugins without a restart, the open file picks up its plugin. */
+async function reloadAllPlugins() {
+  const result = await initPlugins();
+  log.info({ action: "plugins_reloaded", count: result.plugins.length });
+  reloadPlugin();
+  update();
 }
 
 // ----- Startup animation -----
@@ -259,7 +339,11 @@ async function openRecovery() {
 
 let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
+// bumped on every new request and on cancel, so late plugin answers are dropped
+let completionRequest = 0;
+
 function cancelAutoComplete() {
+  completionRequest++;
   if (autoCompleteTimer) {
     clearTimeout(autoCompleteTimer);
     autoCompleteTimer = null;
@@ -289,8 +373,18 @@ function openCompletion() {
     width: viewW,
     height: viewH,
   });
-  triggerCompletion(comp, session.plugin, ctx, editor.lines, p.y, p.x);
-  renderView();
+  // the popup only opens if nothing changed while a (possibly async) plugin answered
+  const request = ++completionRequest;
+  const { x, y } = p;
+  const lineBefore = editor.lines[y];
+  const isCurrent = () =>
+    request === completionRequest &&
+    cm.primary.x === x &&
+    cm.primary.y === y &&
+    editor.lines[y] === lineBefore;
+  void triggerCompletion(comp, session.plugin, ctx, editor.lines, y, x, isCurrent).then(() => {
+    if (isCurrent()) renderView();
+  });
 }
 
 function acceptCompletion() {
@@ -358,7 +452,7 @@ function dispatch(key: KeyEvent) {
     }
   }
 
-  const result = handleKey(key, editor, cm, screen, undo, session.plugin);
+  const result = handleKey(key, editor, cm, screen, undo, session.plugin, update);
   if (result !== "continue") {
     cancelAutoComplete();
     closeCompletion(comp);
@@ -386,7 +480,9 @@ function dispatch(key: KeyEvent) {
         (!key.ctrl && !key.alt && key.name.length === 1) ||
         key.name === "backspace" ||
         key.name === "tab";
+      // anything else (arrows, home, ...) moved the cursor: a pending completion is stale
       if (isTyping) scheduleAutoComplete();
+      else cancelAutoComplete();
     }
   }
 }
@@ -459,6 +555,7 @@ editorLayer.on("shortcut", (event) => {
 });
 
 editorLayer.on("key", (key) => {
+  userTyped = true;
   // alert intercepts ESC; onClose callback clears activeAlert and re-renders
   if (activeAlert && alertHandleKey(activeAlert, key.raw)) {
     return true;
@@ -650,8 +747,17 @@ async function start() {
     })),
   });
   for (const err of loadResult.errors) {
-    log.error({ action: "plugin_load_failed", dir: err.dir, error: err.error });
+    log.error({
+      action: "plugin_load_failed",
+      plugin: err.name,
+      dir: err.dir,
+      error: err.error,
+      why: err.why,
+      fix: err.fix,
+      link: err.link,
+    });
   }
+  pluginErrors = loadResult.errors.map((e) => e.name);
   for (const conflict of loadResult.conflicts) {
     log.warn({ action: "plugin_conflict", message: conflict });
   }
@@ -667,6 +773,7 @@ async function start() {
 
   if (filePath) {
     reloadPlugin();
+    fileOpened();
     if (session.plugin) {
       log.info({
         action: "language_detected",
@@ -686,6 +793,8 @@ async function start() {
   process.stdin.setRawMode(true);
   input.start();
   refreshRecoveryBanner();
+  showPluginErrors();
+  void offerPlugins();
   playStartupAnimation();
   update();
 
@@ -694,7 +803,8 @@ async function start() {
 
   // async version check - shows a banner if a newer version is available
   void checkIfUpdateAvailable().then((latest) => {
-    if (!latest) return;
+    // don't replace a plugin error, that one matters more
+    if (!latest || activeAlert) return;
     const current = process.env.JANO_VERSION || "dev";
     activeAlert = createAlert(
       {

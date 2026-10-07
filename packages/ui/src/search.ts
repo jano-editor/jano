@@ -117,8 +117,9 @@ export function showSearch(
 
     function renderSearch() {
       if (!backgroundDrawn) {
-        renderBackground();
+        // set first: the background render paints open layers, including this one
         backgroundDrawn = true;
+        renderBackground();
       }
 
       const showReplace = !opts.searchOnly;
@@ -259,7 +260,8 @@ export function showSearch(
       resolve(result);
     }
 
-    const layer = inputMgr.pushLayer("search");
+    // with a render function the search stays on top when something redraws the screen
+    const layer = inputMgr.pushLayer("search", renderSearch);
 
     layer.on("key", (key: KeyEvent) => {
       // escape

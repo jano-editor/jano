@@ -1,13 +1,5 @@
 #!/usr/bin/env node
-import {
-  readdirSync,
-  readFileSync,
-  rmSync,
-  existsSync,
-  writeFileSync,
-  chmodSync,
-  renameSync,
-} from "node:fs";
+import { readdirSync, rmSync, existsSync, writeFileSync, chmodSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { platform, arch } from "node:os";
@@ -20,6 +12,7 @@ import {
   type GithubRelease,
 } from "./utils/version-check.ts";
 import { installPlugin, searchPlugins, fetchPluginList } from "./plugins/registry.ts";
+import { loadPlugins } from "./plugins/loader.ts";
 
 const args = process.argv.slice(2);
 
@@ -95,23 +88,40 @@ async function handlePluginCommand() {
         console.log("No plugins installed.");
         break;
       }
-      const dirs = readdirSync(pluginsDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+      const dirs = readdirSync(pluginsDir, { withFileTypes: true }).filter(
+        (d) => d.isDirectory() && !d.name.startsWith("."),
+      );
       if (dirs.length === 0) {
         console.log("No plugins installed.");
         break;
       }
+
+      // actually load them, so broken plugins show up with an explanation
+      const result = await loadPlugins();
+      const loaded = new Map(result.plugins.map((p) => [p.dir, p]));
+      const failed = new Map(result.errors.map((e) => [e.dir, e]));
+      const conflicted = new Set(result.conflictDirs);
+
       console.log("Installed plugins:\n");
-      for (const dir of dirs) {
-        const manifestPath = join(pluginsDir, dir.name, "plugin.json");
-        try {
-          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-          console.log(
-            `  ${manifest.name} v${manifest.version}  (${manifest.extensions.join(", ")})`,
-          );
-        } catch {
-          console.log(`  ${dir.name} (invalid plugin.json)`);
+      for (const d of dirs) {
+        const dir = join(pluginsDir, d.name);
+        const ok = loaded.get(dir);
+        const err = failed.get(dir);
+        if (ok) {
+          const { name, version, extensions } = ok.manifest;
+          console.log(`  ✓ ${name} v${version}  (${extensions.join(", ")})`);
+        } else if (err) {
+          console.log(`  ✗ ${err.error}`);
+          console.log(`      why:  ${err.why}`);
+          console.log(`      fix:  ${err.fix}`);
+          console.log(`      link: ${err.link}`);
+        } else if (conflicted.has(dir)) {
+          console.log(`  ! ${d.name} (skipped, extension conflict, see below)`);
+        } else {
+          console.log(`  - ${d.name} (disabled)`);
         }
       }
+      for (const conflict of result.conflicts) console.log(`\n  ! ${conflict}`);
       break;
     }
 
@@ -136,28 +146,11 @@ async function handlePluginCommand() {
     }
 
     case "search": {
-      const query = args[2];
-      if (!query) {
-        // list all
-        const all = await fetchPluginList();
-        if (all.length === 0) {
-          console.log("No plugins available.");
-          break;
-        }
-        console.log("Available plugins:\n");
-        for (const p of all) {
-          console.log(`  ${p.name} v${p.latestVersion}  ${p.description}`);
-        }
-      } else {
-        const results = await searchPlugins(query);
-        if (results.length === 0) {
-          console.log(`No plugins found for '${query}'.`);
-          break;
-        }
-        console.log(`Found ${results.length} plugin(s):\n`);
-        for (const p of results) {
-          console.log(`  ${p.name} v${p.latestVersion}  ${p.description}`);
-        }
+      try {
+        await searchCommand(args[2]);
+      } catch (err) {
+        console.error(`[jano] ✗ ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
       }
       break;
     }
@@ -165,6 +158,18 @@ async function handlePluginCommand() {
     default:
       console.error("Usage: jano plugin <install|list|remove|search> [args]");
       process.exit(1);
+  }
+}
+
+async function searchCommand(query: string | undefined) {
+  const plugins = query ? await searchPlugins(query) : await fetchPluginList();
+  if (plugins.length === 0) {
+    console.log(query ? `No plugins found for '${query}'.` : "No plugins available.");
+    return;
+  }
+  console.log(query ? `Found ${plugins.length} plugin(s):\n` : "Available plugins:\n");
+  for (const p of plugins) {
+    console.log(`  ${p.name} v${p.latestVersion}  ${p.description}`);
   }
 }
 

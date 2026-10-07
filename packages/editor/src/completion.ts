@@ -1,6 +1,8 @@
 import type { CompletionItem, LanguagePlugin, PluginContext } from "./plugins/types.ts";
 import { WORD_CHAR } from "./text-layout.ts";
-import { callPluginHook } from "./plugins/call.ts";
+import { callPluginHookAsync } from "./plugins/call.ts";
+
+const COMPLETE_TIMEOUT_MS = 2000;
 
 export interface CompletionState {
   active: boolean;
@@ -163,21 +165,32 @@ export function getBufferWordCompletions(
   return items;
 }
 
-export function triggerCompletion(
+/**
+ * Collects plugin and buffer word completions and opens the popup. Plugins may answer
+ * async (api 2): if isCurrent() is false by then (user moved on), nothing is shown.
+ */
+export async function triggerCompletion(
   state: CompletionState,
   plugin: LanguagePlugin | null,
   ctx: PluginContext,
   lines: readonly string[],
   cursorLine: number,
   cursorCol: number,
-): void {
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
   // merge plugin items + buffer word items
   const items: CompletionItem[] = [];
   const seen = new Set<string>();
 
   if (plugin?.onComplete) {
-    const pluginItems = callPluginHook(plugin, "onComplete", () => plugin.onComplete!(ctx));
-    if (pluginItems) {
+    const pluginItems = await callPluginHookAsync(
+      plugin,
+      "onComplete",
+      () => plugin.onComplete!(ctx),
+      COMPLETE_TIMEOUT_MS,
+    );
+    if (!isCurrent()) return;
+    if (Array.isArray(pluginItems)) {
       for (const item of pluginItems) {
         if (!seen.has(item.label)) {
           seen.add(item.label);

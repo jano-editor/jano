@@ -2,7 +2,43 @@ import { existsSync } from "node:fs";
 import { showDialog } from "@jano-editor/ui";
 import { saveAs } from "../editor.ts";
 import { log } from "../utils/logger.ts";
+import { buildContext } from "../plugins/context.ts";
+import { applyEditResult } from "../plugins/apply.ts";
+import { callPluginHookAsync } from "../plugins/call.ts";
+import { getViewDimensions } from "../render.ts";
 import type { Session } from "./session.ts";
+
+const SAVE_HOOK_TIMEOUT_MS = 3000;
+
+/** Lets the plugin adjust the document right before it is written. Undoable like any edit. */
+async function runSaveHook(s: Session) {
+  const plugin = s.plugin;
+  if (!plugin?.onSave) return;
+  const { viewW, viewH } = getViewDimensions(s.screen, s.editor.lines.length, plugin);
+  const ctx = buildContext(s.editor, s.cm, {
+    firstLine: s.cm.scrollY,
+    lastLine: s.cm.scrollY + viewH,
+    width: viewW,
+    height: viewH,
+  });
+  const before = s.editor.lines.join("\n");
+  const result = await callPluginHookAsync(
+    plugin,
+    "onSave",
+    () => plugin.onSave!(ctx),
+    SAVE_HOOK_TIMEOUT_MS,
+  );
+  if (!result) return;
+  if (s.editor.lines.join("\n") !== before) {
+    log.info({ action: "plugin_result_stale", plugin: plugin.name, hook: "onSave" });
+    return;
+  }
+  const p = s.cm.primary;
+  s.undo.snapshot("save", { x: p.x, y: p.y }, s.editor.lines, s.cm.saveState());
+  applyEditResult(result, s.editor, s.cm);
+  s.cm.clampAll(s.editor.lines);
+  s.undo.commit({ x: p.x, y: p.y }, s.editor.lines, s.cm.saveState());
+}
 
 export async function trySave(s: Session, filePath: string): Promise<boolean> {
   const targetExists = existsSync(filePath);
@@ -37,6 +73,8 @@ export async function trySave(s: Session, filePath: string): Promise<boolean> {
       return false;
     }
   }
+
+  await runSaveHook(s);
 
   try {
     saveAs(s.editor, filePath);

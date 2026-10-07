@@ -12,6 +12,8 @@ export type { AlertOptions, AlertType, AlertPosition, AlertColors, AlertState } 
 export { drawList, listMoveUp, listMoveDown } from "./list.ts";
 export type { ListItem, ListOptions, ListState } from "./list.ts";
 export { drawToggle, TOGGLE_WIDTH } from "./toggle.ts";
+export { drawProgress } from "./progress.ts";
+export type { ProgressOptions } from "./progress.ts";
 export {
   createReveal,
   drawReveal,

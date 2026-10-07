@@ -71,6 +71,7 @@ function restore(s: Session, entry: BackupEntry) {
   s.undo.clear();
   s.cm.restoreState({ cursors: [{ x: 0, y: 0, anchor: null }], scrollX: 0, scrollY: 0 });
   s.reloadPlugin();
+  s.fileOpened();
 
   // take over the backup before deleting the orphan, so there is never a gap
   s.backup.writeNow(s.editor);
@@ -150,8 +151,9 @@ function pickBackup(s: Session, entries: BackupEntry[]): Promise<Picked> {
 
     function renderPicker() {
       if (!backgroundDrawn) {
-        s.update();
+        // set first: the background render paints open layers, including this dialog
         backgroundDrawn = true;
+        s.update();
       }
 
       // title, hint, separator, list, detail line, bottom border
@@ -199,7 +201,7 @@ function pickBackup(s: Session, entries: BackupEntry[]): Promise<Picked> {
       s.draw.flush();
     }
 
-    const layer = s.input.pushLayer("recover");
+    const layer = s.input.pushLayer("recover", renderPicker);
     const close = (result: Picked) => {
       s.input.popLayer(layer);
       resolve(result);

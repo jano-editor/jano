@@ -49,6 +49,7 @@ export interface InputLayer {
 
 interface LayerInternal extends InputLayer {
   handlers: Map<InputEventName, Set<InputHandler<any>>>;
+  render?: () => void;
 }
 
 function createLayer(name: string): LayerInternal {
@@ -341,8 +342,16 @@ export function keyToCombo(key: KeyEvent): string {
 export interface InputManager {
   start(): void;
   stop(): void;
-  pushLayer(name: string): InputLayer;
+  /**
+   * Pushes an input layer. A layer that is also something visible (a dialog) passes its
+   * render function, so renderLayers() can repaint it on top whenever the screen is redrawn.
+   */
+  pushLayer(name: string, render?: () => void): InputLayer;
+  /** Repaints all layers that have a render function, bottom to top. Returns true if any did. */
+  renderLayers(): boolean;
   popLayer(layer: InputLayer): void;
+  /** name of the layer that currently receives input first, e.g. to avoid opening a dialog over another one */
+  topLayerName(): string | undefined;
   /** Register a keyboard shortcut. Combo format: "ctrl+s", "alt+up", "f9", etc. */
   registerShortcut(combo: string, action: string): void;
   /** Remove a registered shortcut. */
@@ -453,10 +462,26 @@ export function createInputManager(): InputManager {
       process.stdout.removeListener("resize", onResize);
     },
 
-    pushLayer(name: string): InputLayer {
+    pushLayer(name: string, render?: () => void): InputLayer {
       const layer = createLayer(name);
+      layer.render = render;
       layers.push(layer);
       return layer;
+    },
+
+    renderLayers() {
+      let rendered = false;
+      // copy: a render function may close its own dialog
+      for (const layer of layers.slice()) {
+        if (!layer.render) continue;
+        layer.render();
+        rendered = true;
+      }
+      return rendered;
+    },
+
+    topLayerName() {
+      return layers[layers.length - 1]?.name;
     },
 
     popLayer(layer: InputLayer) {

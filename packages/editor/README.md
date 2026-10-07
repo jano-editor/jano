@@ -16,7 +16,7 @@ Website: [janoeditor.dev](https://janoeditor.dev) · Repo: [jano-editor/jano](ht
 - **Respects your files** - keeps LF/CRLF and BOM (mixed files are normalized), emoji and tabs line up exactly.
 - **Never lose work** - unsaved changes are backed up in the background. After a crash, jano offers to restore them.
 - **Auto-formatting** — F3 runs the active plugin's formatter on the whole document.
-- **Plugin store** — `jano plugin install yaml`, browse at [janoeditor.dev/plugins](https://janoeditor.dev/plugins).
+- **Plugin store** — `jano plugin install yaml`, browse at [janoeditor.dev/plugins](https://janoeditor.dev/plugins). On first start jano offers the recommended plugins and installs them in one go.
 - **Zero bloat** — ~59KB JS bundle, starts instantly, smooth scrolling at 60,000+ lines.
 - **100% JavaScript** — no native addons, no compile steps. If you can read JS, you can extend jano.
 

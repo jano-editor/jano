@@ -18,6 +18,7 @@ export type {
   CompletionItem,
   CompletionKind,
   LanguagePlugin,
+  MaybePromise,
 } from "@jano-editor/plugin-types";
 
 import type { RGB } from "@jano-editor/plugin-types";

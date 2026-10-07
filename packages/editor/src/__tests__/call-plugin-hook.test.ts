@@ -17,7 +17,7 @@ void mock.module("../utils/logger.ts", () => ({
   createError: (o: unknown) => o,
 }));
 
-const { callPluginHook } = await import("../plugins/call.ts");
+const { callPluginHook, callPluginHookAsync } = await import("../plugins/call.ts");
 
 describe("callPluginHook", () => {
   beforeEach(() => {
@@ -121,5 +121,54 @@ describe("callPluginHook", () => {
       expect(logCalls[0]!.event.hook).toBe("onValidate");
       expect(logCalls[0]!.event.durationMs).toBeGreaterThanOrEqual(5);
     });
+  });
+});
+
+describe("callPluginHookAsync", () => {
+  beforeEach(() => {
+    logCalls.length = 0;
+  });
+  const plugin = { name: "yaml" };
+
+  it("returns sync results", async () => {
+    expect(await callPluginHookAsync(plugin, "onFormat", () => 42, 100)).toBe(42);
+  });
+
+  it("awaits async results", async () => {
+    const result = await callPluginHookAsync(plugin, "onFormat", async () => "done", 100);
+    expect(result).toBe("done");
+  });
+
+  it("turns a sync throw into null and logs it", async () => {
+    const result = await callPluginHookAsync(
+      plugin,
+      "onFormat",
+      () => {
+        throw new Error("boom");
+      },
+      100,
+    );
+    expect(result).toBeNull();
+    expect(logCalls.some((c) => c.event.action === "plugin_hook_failed")).toBe(true);
+  });
+
+  it("turns a rejection into null and logs it", async () => {
+    const result = await callPluginHookAsync(
+      plugin,
+      "onSave",
+      () => Promise.reject(new Error("nope")),
+      100,
+    );
+    expect(result).toBeNull();
+    expect(logCalls.find((c) => c.event.action === "plugin_hook_failed")?.event.hook).toBe(
+      "onSave",
+    );
+  });
+
+  it("gives up after the timeout", async () => {
+    const never = () => new Promise<number>(() => {});
+    const result = await callPluginHookAsync(plugin, "onComplete", never, 20);
+    expect(result).toBeNull();
+    expect(logCalls.some((c) => c.event.action === "plugin_hook_timeout")).toBe(true);
   });
 });
