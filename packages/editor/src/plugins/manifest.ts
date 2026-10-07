@@ -1,5 +1,7 @@
-// bump this when the plugin API has breaking changes
+// newest plugin API this jano understands. plugins declaring a higher one need a newer jano.
 export const CURRENT_API_VERSION = 1;
+// oldest plugin API still supported. raise it when a breaking change drops old plugins.
+export const MIN_API_VERSION = 1;
 
 export interface PluginManifest {
   name: string;

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import type { LanguagePlugin } from "./types.ts";
-import { validateManifest, CURRENT_API_VERSION } from "./manifest.ts";
+import { validateManifest, CURRENT_API_VERSION, MIN_API_VERSION } from "./manifest.ts";
 import type { PluginManifest } from "./manifest.ts";
 import { getPluginsDir, loadConfig, isPluginEnabled } from "./config.ts";
 
@@ -40,7 +40,8 @@ export async function loadPlugins(): Promise<LoadResult> {
   let dirs: string[];
   try {
     dirs = readdirSync(pluginsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      // dot dirs are install staging areas, not plugins
+      .filter((d) => d.isDirectory() && !d.name.startsWith("."))
       .map((d) => d.name);
   } catch {
     return result;
@@ -79,6 +80,14 @@ export async function loadPlugins(): Promise<LoadResult> {
       result.errors.push({
         dir,
         error: `"${manifest.name}" requires API v${manifest.api}, but jano supports v${CURRENT_API_VERSION}. Update jano to use this plugin.`,
+      });
+      continue;
+    }
+
+    if (manifest.api < MIN_API_VERSION) {
+      result.errors.push({
+        dir,
+        error: `"${manifest.name}" uses API v${manifest.api}, but jano needs at least v${MIN_API_VERSION}. Update the plugin.`,
       });
       continue;
     }
