@@ -7,7 +7,12 @@ import {
   type ListItem,
 } from "@jano-editor/ui";
 import type { Session } from "./session.ts";
-import { getEditorSettings, updateEditorSetting, resetEditorSettings } from "../settings.ts";
+import {
+  getUserSettings,
+  getFileOverrides,
+  updateEditorSetting,
+  resetEditorSettings,
+} from "../settings.ts";
 
 type EditorSettingRow =
   | { kind: "cycler"; key: "tabSize"; label: string; values: number[] }
@@ -94,7 +99,9 @@ export function showSettings(s: Session): Promise<void> {
         const valueFg = [100, 105, 115] as [number, number, number];
         const actionFg = [200, 130, 130] as [number, number, number];
 
-        const settings = getEditorSettings();
+        // the dialog shows and edits the user's own settings, project values are shown next to them
+        const settings = getUserSettings();
+        const project = getFileOverrides();
 
         for (let i = 0; i < editorSettingRows.length; i++) {
           const row = editorSettingRows[i];
@@ -107,6 +114,16 @@ export function showSettings(s: Session): Promise<void> {
             s.draw.char(x + 1 + col, rowY, " ", { bg: rowBg });
           }
           s.draw.text(x + 3, rowY, row.label, { fg: labelFg, bg: rowBg });
+          // the project wins for this file, so say what it uses and where it comes from
+          const projectValue = row.kind === "action" ? undefined : project[row.key];
+          if (projectValue !== undefined) {
+            const shown =
+              typeof projectValue === "boolean" ? (projectValue ? "on" : "off") : projectValue;
+            s.draw.text(x + 4 + row.label.length, rowY, `· project: ${shown} (.editorconfig)`, {
+              fg: isSelected ? selectedFg : valueFg,
+              bg: rowBg,
+            });
+          }
 
           if (row.kind === "toggle") {
             drawToggle(s.draw, {
@@ -142,7 +159,7 @@ export function showSettings(s: Session): Promise<void> {
 
     function changeSetting(direction: -1 | 1) {
       const row = editorSettingRows[editorIdx];
-      const settings = getEditorSettings();
+      const settings = getUserSettings();
       if (row.kind === "toggle") {
         updateEditorSetting(row.key, !settings[row.key]);
       } else if (row.kind === "cycler") {
@@ -155,7 +172,7 @@ export function showSettings(s: Session): Promise<void> {
     async function activateRow() {
       const row = editorSettingRows[editorIdx];
       if (row.kind === "toggle") {
-        const settings = getEditorSettings();
+        const settings = getUserSettings();
         updateEditorSetting(row.key, !settings[row.key]);
         renderSettings();
       } else if (row.kind === "action" && row.action === "reset") {

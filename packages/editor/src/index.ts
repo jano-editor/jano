@@ -51,7 +51,8 @@ import { pickRecommendations } from "./plugins/recommendations.ts";
 import { showPluginWelcome } from "./dialogs/welcome.ts";
 import { createBackupManager, listOrphanedBackups } from "./backup.ts";
 import { createValidator } from "./validator.ts";
-import { getEditorSettings } from "./settings.ts";
+import { getEditorSettings, setFileOverrides } from "./settings.ts";
+import { resolveEditorConfig } from "./editorconfig.ts";
 import { getGitInfo, type GitInfo } from "./git.ts";
 import { colAt, idxAtCol, WORD_CHAR, NON_WORD_CHAR } from "./text-layout.ts";
 import {
@@ -192,7 +193,25 @@ function update() {
   backup.schedule(editor);
 }
 
+/** Per-file settings from .editorconfig. New files also take its line ending and BOM. */
+function applyEditorConfig() {
+  if (!editor.filePath) {
+    setFileOverrides({});
+    return;
+  }
+  const ec = resolveEditorConfig(editor.filePath);
+  setFileOverrides(ec.settings);
+  if (editor.isNewFile) {
+    if (ec.eol) editor.eol = ec.eol;
+    if (ec.bom !== undefined) editor.bom = ec.bom;
+  }
+  if (ec.files.length > 0) {
+    log.info({ action: "editorconfig_applied", files: ec.files, settings: ec.settings });
+  }
+}
+
 function reloadPlugin() {
+  applyEditorConfig();
   session.plugin = detectLanguage(editor.filePath);
   if (session.plugin) {
     const loaded = getLoadedPlugins().find((p) => p.plugin === session.plugin);
